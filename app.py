@@ -96,6 +96,10 @@ if "email_subject" not in st.session_state:
     st.session_state.email_subject = ""
 if "is_generated" not in st.session_state:
     st.session_state.is_generated = False
+if "generation_error" not in st.session_state:
+    st.session_state.generation_error = None
+if "trigger_retry" not in st.session_state:
+    st.session_state.trigger_retry = False
 
 # ------------------------------------------------------------------------------
 # Sidebar: Settings & Credentials
@@ -190,15 +194,27 @@ with tab_ai:
     with col_chips[0]:
         if st.button("🚀 Milestone Completed", use_container_width=True):
             st.session_state.topic_input = "Informing client that Project Milestone 1 has been completed on schedule with deliverables attached."
+            st.session_state.topic_area = st.session_state.topic_input
+            st.session_state.generation_error = None
+            st.rerun()
     with col_chips[1]:
         if st.button("📅 Reschedule Meeting", use_container_width=True):
             st.session_state.topic_input = "Requesting to reschedule the technical sync from Thursday 3 PM to Friday 10 AM due to an unavoidable conflict."
+            st.session_state.topic_area = st.session_state.topic_input
+            st.session_state.generation_error = None
+            st.rerun()
     with col_chips[2]:
         if st.button("💼 Delivery Update", use_container_width=True):
             st.session_state.topic_input = "Providing a weekly status report on system performance, bug fixes, and next sprint goals."
+            st.session_state.topic_area = st.session_state.topic_input
+            st.session_state.generation_error = None
+            st.rerun()
     with col_chips[3]:
         if st.button("🤝 Partnership Proposal", use_container_width=True):
             st.session_state.topic_input = "Reaching out to explore a collaborative partnership between our software engineering teams."
+            st.session_state.topic_area = st.session_state.topic_input
+            st.session_state.generation_error = None
+            st.rerun()
 
     topic_text = st.text_area(
         "Enter email topic, intent, or bullet points:",
@@ -211,27 +227,72 @@ with tab_ai:
 
     btn_generate_ai = st.button("✨ Generate Formal Email & Translate", type="primary", use_container_width=True, key="btn_ai")
 
-    if btn_generate_ai:
-        if not topic_text.strip():
+    # Graceful error handling: Display warning, tip & retry button if a timeout or generation error occurred
+    if st.session_state.get("generation_error"):
+        err_info = st.session_state.generation_error
+        if err_info.get("is_timeout"):
+            st.warning(
+                f"⚠️ **Request Timed Out**: {err_info.get('message')}\n\n"
+                "The NVIDIA AI Cloud endpoint did not respond within the allocated timeframe despite retries."
+            )
+            st.info(
+                "💡 **Tip:** Cloud GPU endpoints (such as NVIDIA AI Foundation Endpoints) occasionally experience "
+                "momentary cold starts or high server queue latency during traffic spikes. "
+                "Retrying typically connects to a warmed GPU instance immediately. "
+                "You can also select a faster model (e.g., `meta/llama-3.1-8b-instruct`) in the sidebar."
+            )
+            col_retry, _ = st.columns([1, 2])
+            with col_retry:
+                if st.button("🔄 Retry Generation", type="primary", use_container_width=True, key="btn_retry_action"):
+                    st.session_state.trigger_retry = True
+                    st.session_state.generation_error = None
+                    st.rerun()
+        else:
+            st.error(f"❌ Email generation failed: {err_info.get('message')}")
+            col_retry, _ = st.columns([1, 2])
+            with col_retry:
+                if st.button("🔄 Retry Generation", use_container_width=True, key="btn_retry_generic"):
+                    st.session_state.trigger_retry = True
+                    st.session_state.generation_error = None
+                    st.rerun()
+
+    trigger_generate = btn_generate_ai or st.session_state.get("trigger_retry", False)
+
+    if trigger_generate:
+        st.session_state.trigger_retry = False
+        target_topic = topic_text.strip() if topic_text and topic_text.strip() else st.session_state.get("topic_input", "").strip()
+
+        if not target_topic:
             st.warning("⚠️ Please provide an email topic or select one of the quick presets above.")
+            st.session_state.generation_error = None
         elif not os.getenv("NVIDIA_API_KEY"):
             st.error("❌ NVIDIA API Key is required for email generation. Please enter it in the sidebar or set NVIDIA_API_KEY in your .env file.")
+            st.session_state.generation_error = None
         else:
-            with st.spinner("🤖 [1/2] Drafting formal English email using NVIDIA AI Foundation Endpoints..."):
+            st.session_state.generation_error = None
+            st.session_state.is_generated = False
+
+            with st.spinner("🤖 Drafting formal English email via NVIDIA AI Cloud (may take 5-15s depending on server queue)..."):
                 try:
-                    raw_draft = generate_email(topic_text.strip())
+                    raw_draft = generate_email(target_topic)
                     inferred_sub, cleaned_body = extract_subject_from_draft(raw_draft)
                     st.session_state.email_subject = inferred_sub
                     st.session_state.english_draft = cleaned_body
                 except Exception as e:
-                    st.error(f"❌ Email generation failed: {e}")
-                    st.stop()
+                    err_msg = str(e)
+                    is_timeout = "timeout" in err_msg.lower() or "timed out" in err_msg.lower()
+                    st.session_state.generation_error = {
+                        "is_timeout": is_timeout,
+                        "message": err_msg
+                    }
+                    st.rerun()
 
-            with st.spinner("🌐 [2/2] Translating English email to Japanese using Google Translate..."):
+            with st.spinner("🌐 Translating English email to Japanese using Google Translate..."):
                 try:
                     ja_trans = translate_english_to_japanese(st.session_state.english_draft)
                     st.session_state.japanese_body = ja_trans
                     st.session_state.is_generated = True
+                    st.session_state.generation_error = None
                     st.success("🎉 Email generated and translated successfully! Review it in Step 2 below.")
                 except Exception as e:
                     st.error(f"❌ Translation failed: {e}")
@@ -263,6 +324,7 @@ with tab_direct:
                     if not st.session_state.email_subject:
                         st.session_state.email_subject = "Communication / ご連絡"
                     st.session_state.is_generated = True
+                    st.session_state.generation_error = None
                     st.success("🎉 Translation completed! Review it in Step 2 below.")
                 except Exception as e:
                     st.error(f"❌ Direct translation failed: {e}")

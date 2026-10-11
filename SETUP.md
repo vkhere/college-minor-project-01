@@ -332,6 +332,35 @@ python -c "from email_trans.write_email import generate_email; from email_trans.
 
 ---
 
+### 7. NVIDIA NIM Cloud Endpoint Timeout (`The read operation timed out`)
+* **Symptoms:**
+  - The email composition process stalls for 30–60 seconds, followed by:
+    ```text
+    NVIDIA API Connection Error: <urlopen error The read operation timed out>
+    ```
+    or `urllib.error.URLError: <urlopen error The read operation timed out>`.
+* **Root Cause:**
+  - Foundation LLM endpoints on NVIDIA NIM (such as `google/diffusiongemma-26b-a4b-it` or `meta/llama-3.1-70b-instruct`) run on distributed cloud GPU clusters.
+  - During server cold starts (allocating GPU worker nodes and loading 26B+ model weights into VRAM) or peak multi-tenant request queuing spikes, inference latency can exceed standard 30-second socket deadlines, resulting in client-side read timeouts.
+* **Built-in Resilience Features:**
+  - **Relaxed Socket Deadline (60s):** The client connection read timeout is set to 60 seconds, giving remote GPU inference nodes adequate headroom to complete container initialization and model execution.
+  - **Automated Exponential Backoff:** The client automatically attempts up to 3 retries with progressive backoff delays ($\Delta t_{\text{wait}} = 2\text{s}, 4\text{s}, 8\text{s}$) to smoothly absorb transient queue congestion.
+  - **Token Optimization:** Prompt token overhead and maximum completion limits (`max_tokens: 512`) are constrained to reduce KV-cache prefill and generation latency.
+* **Recommended Troubleshooting Steps:**
+  1. **Allow Automatic Retries to Complete:** In most cases, the automated retry mechanism successfully receives a response on attempt 2 or 3 as the container completes its warm-up cycle.
+  2. **Switch to an Alternative High-Availability Model in `.env`:** If the DiffusionGemma 26B endpoint is experiencing sustained queue congestion, switch `NVIDIA_MODEL` in your `.env` file to a high-throughput alternative:
+     ```ini
+     # Ultra-fast, high-availability instruction model
+     NVIDIA_MODEL=meta/llama-3.1-8b-instruct
+
+     # Or flagship instruction model
+     NVIDIA_MODEL=meta/llama-3.1-70b-instruct
+     ```
+  3. **Check Network Connectivity & VPNs:** Corporate proxies or VPNs performing TLS inspection may terminate long-lived HTTP streaming sockets prematurely. Ensure steady outbound HTTPS access to `https://integrate.api.nvidia.com`.
+  4. **Use Direct Translation Mode:** When immediate email dispatch is necessary and LLM drafting is not required, use **"Direct Translation"** mode in the Streamlit web interface (`app.py`), which translates pre-written English drafts via Google Translate without invoking the LLM endpoint.
+
+---
+
 ## 8. Project Structure Reference
 
 ```
