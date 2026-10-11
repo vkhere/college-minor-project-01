@@ -45,7 +45,12 @@ def is_valid_email(email_address: str) -> bool:
     return bool(EMAIL_REGEX.match(email_address.strip()))
 
 
-def build_email_html(japanese_body: str, english_body: str, subject: str = "") -> str:
+def build_email_html(
+    japanese_body: str,
+    english_body: str,
+    subject: str = "",
+    japanese_subject: Optional[str] = None,
+) -> str:
     """
     Constructs a responsive dual-card HTML email body.
     - Japanese Primary Card: Light Grey (#f8f9fa) background with Rose accent (#d63384).
@@ -56,6 +61,17 @@ def build_email_html(japanese_body: str, english_body: str, subject: str = "") -
     escaped_ja = html.escape(japanese_body.strip()).replace("\n", "<br>\n")
     escaped_en = html.escape(english_body.strip()).replace("\n", "<br>\n")
     escaped_subject = html.escape(subject.strip()) if subject else "Bilingual Communication"
+
+    ja_subject_header = ""
+    if japanese_subject and japanese_subject.strip():
+        sub_text = japanese_subject.strip()
+        if not (sub_text.startswith("【") and sub_text.endswith("】")):
+            sub_text = f"【{sub_text}】"
+        escaped_ja_sub = html.escape(sub_text)
+        ja_subject_header = (
+            f'\n          <div style="margin-top: 8px; font-size: 14px; font-weight: 600; color: #212529;">'
+            f'件名: {escaped_ja_sub}</div>'
+        )
 
     return f"""<!DOCTYPE html>
 <html lang="ja">
@@ -81,12 +97,14 @@ def build_email_html(japanese_body: str, english_body: str, subject: str = "") -
       <!-- Primary Japanese Card (Rose Accent #d63384 on #f8f9fa) -->
       <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-left: 5px solid #d63384; border-radius: 6px; padding: 20px; margin-bottom: 24px;">
         <div style="margin-bottom: 12px;">
-          <span style="display: inline-block; background-color: #d63384; color: #ffffff; font-size: 11px; font-weight: bold; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; margin-right: 8px;">
-            日本語
-          </span>
-          <span style="font-size: 15px; color: #212529; font-weight: 600;">
-            本文 (Japanese - Primary)
-          </span>
+          <div>
+            <span style="display: inline-block; background-color: #d63384; color: #ffffff; font-size: 11px; font-weight: bold; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; margin-right: 8px;">
+              日本語
+            </span>
+            <span style="font-size: 15px; color: #212529; font-weight: 600;">
+              本文 (Japanese - Primary)
+            </span>
+          </div>{ja_subject_header}
         </div>
         <div style="font-size: 15px; color: #212529; white-space: normal; word-break: break-word;">
           {escaped_ja}
@@ -122,12 +140,23 @@ def build_email_html(japanese_body: str, english_body: str, subject: str = "") -
 </html>"""
 
 
-def build_email_plain_text(japanese_body: str, english_body: str) -> str:
+def build_email_plain_text(
+    japanese_body: str,
+    english_body: str,
+    japanese_subject: Optional[str] = None,
+) -> str:
     """Constructs clean plain-text fallback with ASCII dividers."""
+    ja_subject_line = ""
+    if japanese_subject and japanese_subject.strip():
+        sub_text = japanese_subject.strip()
+        if not (sub_text.startswith("【") and sub_text.endswith("】")):
+            sub_text = f"【{sub_text}】"
+        ja_subject_line = f"件名: {sub_text}\n\n"
+
     return f"""======================================================================
 【日本語】本文 (Japanese - Primary)
 ======================================================================
-{japanese_body.strip()}
+{ja_subject_line}{japanese_body.strip()}
 
 ======================================================================
 【English】Original Draft (English Reference)
@@ -151,6 +180,7 @@ def send_email(
     sender_password: Optional[str] = None,
     smtp_host: str = DEFAULT_SMTP_HOST,
     smtp_port: int = DEFAULT_SMTP_PORT,
+    japanese_subject: Optional[str] = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """
@@ -159,7 +189,7 @@ def send_email(
     Supports flexible calling conventions:
     1. send_email(recipient_email, subject, japanese_body, english_body)
     2. send_email(sender_email, sender_password, recipient_email, subject, japanese_body, english_body)
-    3. send_email(recipient_email=..., subject=..., japanese_body=..., english_body=...)
+    3. send_email(recipient_email=..., subject=..., japanese_body=..., english_body=..., japanese_subject=...)
 
     Credentials default to environment variables:
     - GMAIL_ADDRESS or SENDER_EMAIL
@@ -218,6 +248,11 @@ def send_email(
         or kwargs.get("en")
         or ""
     )
+    japanese_subject = (
+        japanese_subject
+        or kwargs.get("japanese_subject")
+        or kwargs.get("ja_subject")
+    )
     sender_email = (
         sender_email
         or kwargs.get("from_email")
@@ -271,8 +306,17 @@ def send_email(
         msg["Date"] = email.utils.formatdate(localtime=True)
         msg["Message-ID"] = email.utils.make_msgid()
 
-        plain_text = build_email_plain_text(japanese_body, english_body)
-        html_content = build_email_html(japanese_body, english_body, subject=subject)
+        plain_text = build_email_plain_text(
+            japanese_body,
+            english_body,
+            japanese_subject=japanese_subject,
+        )
+        html_content = build_email_html(
+            japanese_body,
+            english_body,
+            subject=subject,
+            japanese_subject=japanese_subject,
+        )
 
         # In multipart/alternative, plain text comes first, HTML second (priority)
         part_plain = MIMEText(plain_text, "plain", "utf-8")
@@ -325,12 +369,22 @@ if __name__ == "__main__":
     print("Testing email_sender.py template rendering...")
     sample_ja = "クライアント各位\nプロジェクトが無事に完了しましたことをご報告申し上げます。"
     sample_en = "Dear Client,\nWe are pleased to inform you that the project has been successfully completed."
-    sample_subj = "Project Completion Notification"
+    sample_subj = "【プロジェクト完了のご報告】 Project Completion Notification"
+    sample_ja_subj = "プロジェクト完了のご報告"
 
-    html_out = build_email_html(sample_ja, sample_en, sample_subj)
-    plain_out = build_email_plain_text(sample_ja, sample_en)
+    html_out = build_email_html(
+        sample_ja,
+        sample_en,
+        subject=sample_subj,
+        japanese_subject=sample_ja_subj,
+    )
+    plain_out = build_email_plain_text(
+        sample_ja,
+        sample_en,
+        japanese_subject=sample_ja_subj,
+    )
 
     print("\n--- Plain Text Output Snippet ---")
-    print(plain_out[:200] + "...\n")
+    print(plain_out[:260] + "...\n")
     print("HTML Template size:", len(html_out), "characters")
     print("Email validation test:", is_valid_email("test@example.com"))

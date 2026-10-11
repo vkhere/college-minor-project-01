@@ -10,12 +10,15 @@
 
 ## 📑 Table of Contents
 1. [End-to-End Architecture & Data Flow](#1-end-to-end-architecture--data-flow)
+   - [1.3 Japanese Corporate Correspondence Standards (*Business Mail* / ビジネスメール & *Kenmei* / 件名)](#13-japanese-corporate-correspondence-standards-business-mail--ビジネスメール--kenmei--件名)
 2. [Architectural Deep-Dive: NVIDIA Token Conservation via Google Translate](#2-architectural-deep-dive-nvidia-token-conservation-via-google-translate)
 3. [Architectural Deep-Dive: Seamless Python 3.14.2 Execution (Eliminating PyTorch & Transformers)](#3-architectural-deep-dive-seamless-python-3142-execution-eliminating-pytorch--transformers)
 4. [Module 1: `email_trans/write_email.py` (Email Composition Engine)](#4-module-1-email_transwrite_emailpy-email-composition-engine)
 5. [Module 2: `email_trans/translate.py` (Translation Engine)](#5-module-2-email_transtranslatepy-translation-engine)
+   - [5.4 Subject Line Translation Dynamics](#54-subject-line-translation-dynamics)
 6. [Module 3: `email_trans/email_sender.py` (SMTP Dispatcher & Responsive MIME Formatter)](#6-module-3-email_transemail_senderpy-smtp-dispatcher--responsive-mime-formatter)
 7. [Module 4: `email_trans/main.py` (Unified CLI Orchestrator)](#7-module-4-email_transmainpy-unified-cli-orchestrator)
+   - [7.4 Japanese Subject Line Engineering: Extraction, Side-by-Side Presentation & Bilingual Dispatch](#74-japanese-subject-line-engineering-extraction-side-by-side-presentation--bilingual-dispatch)
 8. [End-to-End Pipeline Integration & Data Lifecycle](#8-end-to-end-pipeline-integration--data-lifecycle)
 9. [Sample Terminal Inputs & Dual-Language Email Outputs](#9-sample-terminal-inputs--dual-language-email-outputs)
 10. [Quick-Start & Verification Commands](#10-quick-start--verification-commands)
@@ -40,22 +43,24 @@ The project implements a decoupled, three-stage cloud-native pipeline coordinate
 │  • NVIDIA AI Foundation Endpoint (OpenAI-compatible /chat/completions)                 │
 │  • Primary Model: google/diffusiongemma-26b-a4b-it (or meta/llama-3.1-70b-instruct)    │
 │  • Dual Execution: LangChain (ChatNVIDIA) with graceful native urllib.request fallback  │
-│  • Role: Formulates formal corporate English email with subject line                   │
+│  • Role: Formulates formal corporate English email with structured subject line        │
 └───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ English Draft (Body + Subject)
+                                            │ English Draft (Subject + Body)
                                             ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                               [2] email_trans/translate.py                             │
-│  • Google Translate Engine via deep-translator library                                 │
-│  • Resilient Fallback: Direct Google Translate HTTP single-query API (urllib)          │
-│  • Role: Translates English text to polite business Japanese (Keigo/Teineigo register)  │
+│  • Google Translate Engine via deep-translator library (urllib fallback)               │
+│  • Dual-Track Translation: Translates both Body & Subject independently                │
+│  • Japanese Subject Formatting: Wraps in corporate brackets (e.g., 【対応完了】)      │
 │  • 100% Free: ZERO tokens deducted from NVIDIA API key quota                          │
 └───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ Japanese Text + English Draft
+                                            │ Bilingual Subject: '【Japanese】 English'
+                                            │ + Dual-Language Body Text
                                             ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                             [3] email_trans/email_sender.py                            │
 │  • Gmail SMTP Dispatcher (smtp.gmail.com:587 with STARTTLS encryption)                 │
+│  • Subject Line: '【Japanese Subject】 English Subject'                                │
 │  • Multi-part MIME Generation: multipart/alternative (RFC 2046)                        │
 │    ├─ HTML Version: Responsive Dual-Card Layout                                        │
 │    │  ├─ Japanese Card: Rose Accent (#d63384) on Light Grey (#f8f9fa) (Primary)        │
@@ -67,7 +72,8 @@ The project implements a decoupled, three-stage cloud-native pipeline coordinate
                                             ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                                  RECIPIENT'S INBOX                                     │
-│                  Beautifully rendered bilingual business communication                 │
+│     Header:  Subject: 【対応完了】 Project Completion Notification                     │
+│     Content: Beautifully rendered bilingual business communication (JA + EN)           │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -86,20 +92,23 @@ flowchart TD
         NV -->|Return Completion| WE
     end
 
-    WE -->|English Draft String| SubjCheck[Extract Subject & Clean Body]
+    WE -->|English Draft String| SubjSplit[Extract Subject & Separate Body]
     
-    subgraph Stage2 [Stage 2: Token-Free Translation]
-        SubjCheck -->|English Body| TR[translate.py]
-        TR -->|Primary Engine| DT[deep-translator GoogleTranslator]
-        DT -.->|Fallback on RateLimit/Error| GAPI[Google HTTP Single Query API]
-        DT -->|en -> ja| GT[Google Translate Service]
-        GAPI -->|en -> ja| GT
-        GT -->|Return Japanese Text| TR
+    subgraph Stage2 [Stage 2: Token-Free Translation & Subject Engineering]
+        SubjSplit -->|English Body| TRBody[translate.py: Body Translation]
+        SubjSplit -->|English Subject| TRSubj[translate.py: Subject Translation]
+        TRBody -->|en -> ja| GTBody[Google Translate Service]
+        TRSubj -->|en -> ja| GTSubj[Google Translate Service]
+        GTBody -->|Japanese Body| BodyReady[Polite Business Body / Keigo]
+        GTSubj -->|Japanese Subject| BracketFormat["Apply Corporate Brackets<br/>e.g., 【対応完了】 / 【件名: ...】"]
+        BracketFormat --> BiSubj["Assemble Bilingual Subject:<br/>'【Japanese Subject】 English Subject'"]
     end
 
     subgraph Stage3 [Stage 3: MIME Formatting & Delivery]
-        TR -->|Japanese + English Text| ES[email_sender.py]
-        ES --> MIME[MIMEMultipart 'alternative']
+        BiSubj --> ES[email_sender.py]
+        BodyReady --> ES
+        SubjSplit -->|Original English Body| ES
+        ES --> MIME[MIMEMultipart 'alternative'<br/>Subject: 【Japanese Subject】 English Subject]
         MIME --> HTML[Responsive HTML Dual Cards<br/>Rose: Japanese / Amber: English]
         MIME --> PLAIN[Plain-Text ASCII Fallback]
         ES --> SMTP[Gmail SMTP:587 STARTTLS]
@@ -107,6 +116,35 @@ flowchart TD
 
     SMTP -->|TLS Encrypted Transmission| Inbox([Recipient Inbox])
 ```
+
+### 1.3 Japanese Corporate Correspondence Standards (*Business Mail* / ビジネスメール & *Kenmei* / 件名)
+
+In Japanese business culture, the email subject line (*Kenmei* / 件名) serves as the primary filter for professional communication, carrying far greater cultural and procedural weight than in Western correspondence:
+
+1. **The Business Mail Protocol (*Bijinesu Mēru* / ビジネスメール):**  
+   Japanese corporate personnel receive hundreds of emails each business day. Protocol requires that a recipient be able to ascertain the exact sender, topic, urgency, and necessary action immediately upon scanning their inbox list—without having to open the message.
+
+2. **Sumitsukikakko (隅付き括弧 `【...】`) Bracket Framing:**  
+   Japanese corporate subject lines strictly utilize full-width lenticular black brackets `【...】` to highlight status, urgency, or action category. Common corporate conventions include:
+   - `【対応完了】` (*Taiō Kanryō*): Task / issue resolution completed.
+   - `【ご確認】` or `【ご確認のお願い】` (*Go-kakunin no onegai*): Formal request for review or approval.
+   - `【日程調整】` or `【日程変更のお願い】` (*Nittei chōsei* / *Nittei henkō*): Meeting schedule coordination or reschedule request.
+   - `【進捗報告】` (*Shinchoku hōkoku*): Periodic project progress status report.
+   - `【重要】` (*Jūyō*): Urgent / mission-critical communication.
+   - `【共有】` or `【情報共有】` (*Kyōyū*): Informational notice (FYI).
+   - `【件名: ...】` (*Kenmei*): Explicit corporate subject descriptor.
+
+3. **Bilingual Subject Line Dispatch Convention:**  
+   To bridge communication between international teams and Japanese enterprise partners, the pipeline standardizes on the bilingual dispatch format:
+   $$\text{Subject Header} = \text{\textbf{【Japanese Subject】 English Subject}}$$
+   *(Examples:)*
+   - `【対応完了】 Project Milestone Completion Notification`
+   - `【日程変更のお願い】 Meeting Reschedule Request`
+   - `【進捗のご報告】 Weekly Sprint Status Report`
+
+   This layout provides dual benefits:
+   - **Japanese recipients:** The bracketed Japanese text is prominently visible in mobile notification banners and desktop mail lists.
+   - **International colleagues:** English search indexing and mail thread tracing remain completely unhindered.
 
 ---
 
@@ -412,6 +450,17 @@ if __name__ == "__main__":
 | **Lines 69–77** | `get_translation_chain()` | Backward-compatibility shim that wraps the translation function into a LangChain `RunnableLambda` if LangChain is installed. |
 | **Lines 79–83** | `if __name__ == "__main__":` | Test execution block translating a formal business email snippet and outputting the Japanese result. |
 
+### 5.4 Subject Line Translation Dynamics
+
+In addition to translating the email body text, `translate_english_to_japanese()` powers the translation of email subject lines:
+
+1. **Independent String Processing:**  
+   Translating the subject line independently from the email body avoids the common issue where machine translation models merge the subject into the salutation or alter sentence boundary markers (`。` or `\n`).
+2. **Noun Phrase (*Taigendome* / 体言止め) Translation:**  
+   English email subjects are typically concise noun phrases (e.g., *"Project Completion Notification"* or *"Meeting Reschedule Request"*). Google Translate accurately renders these into canonical Japanese business phrases (e.g., `プロジェクト完了のご報告` or `会議日程変更のお願い`).
+3. **Zero Token Quota Impact:**  
+   Because both the subject line and body are translated via Google Translate (using `deep-translator` or direct `urllib` HTTP), translating additional metadata like subject lines incurs **zero NVIDIA API token consumption**, keeping the pipeline free, fast (<300 ms), and scalable.
+
 ---
 
 ## 6. Module 3: `email_trans/email_sender.py` (SMTP Dispatcher & Responsive MIME Formatter)
@@ -469,7 +518,12 @@ def is_valid_email(email_address: str) -> bool:
     return bool(EMAIL_REGEX.match(email_address.strip()))
 
 
-def build_email_html(japanese_body: str, english_body: str, subject: str = "") -> str:
+def build_email_html(
+    japanese_body: str,
+    english_body: str,
+    subject: str = "",
+    japanese_subject: Optional[str] = None,
+) -> str:
     """
     Constructs a responsive dual-card HTML email body.
     - Japanese Primary Card: Light Grey (#f8f9fa) background with Rose accent (#d63384).
@@ -480,6 +534,17 @@ def build_email_html(japanese_body: str, english_body: str, subject: str = "") -
     escaped_ja = html.escape(japanese_body.strip()).replace("\n", "<br>\n")
     escaped_en = html.escape(english_body.strip()).replace("\n", "<br>\n")
     escaped_subject = html.escape(subject.strip()) if subject else "Bilingual Communication"
+
+    ja_subject_header = ""
+    if japanese_subject and japanese_subject.strip():
+        sub_text = japanese_subject.strip()
+        if not (sub_text.startswith("【") and sub_text.endswith("】")):
+            sub_text = f"【{sub_text}】"
+        escaped_ja_sub = html.escape(sub_text)
+        ja_subject_header = (
+            f'\n          <div style="margin-top: 8px; font-size: 14px; font-weight: 600; color: #212529;">'
+            f'件名: {escaped_ja_sub}</div>'
+        )
 
     return f"""<!DOCTYPE html>
 <html lang="ja">
@@ -505,12 +570,14 @@ def build_email_html(japanese_body: str, english_body: str, subject: str = "") -
       <!-- Primary Japanese Card (Rose Accent #d63384 on #f8f9fa) -->
       <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-left: 5px solid #d63384; border-radius: 6px; padding: 20px; margin-bottom: 24px;">
         <div style="margin-bottom: 12px;">
-          <span style="display: inline-block; background-color: #d63384; color: #ffffff; font-size: 11px; font-weight: bold; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; margin-right: 8px;">
-            日本語
-          </span>
-          <span style="font-size: 15px; color: #212529; font-weight: 600;">
-            本文 (Japanese - Primary)
-          </span>
+          <div>
+            <span style="display: inline-block; background-color: #d63384; color: #ffffff; font-size: 11px; font-weight: bold; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; margin-right: 8px;">
+              日本語
+            </span>
+            <span style="font-size: 15px; color: #212529; font-weight: 600;">
+              本文 (Japanese - Primary)
+            </span>
+          </div>{ja_subject_header}
         </div>
         <div style="font-size: 15px; color: #212529; white-space: normal; word-break: break-word;">
           {escaped_ja}
@@ -546,12 +613,23 @@ def build_email_html(japanese_body: str, english_body: str, subject: str = "") -
 </html>"""
 
 
-def build_email_plain_text(japanese_body: str, english_body: str) -> str:
+def build_email_plain_text(
+    japanese_body: str,
+    english_body: str,
+    japanese_subject: Optional[str] = None,
+) -> str:
     """Constructs clean plain-text fallback with ASCII dividers."""
+    ja_subject_line = ""
+    if japanese_subject and japanese_subject.strip():
+        sub_text = japanese_subject.strip()
+        if not (sub_text.startswith("【") and sub_text.endswith("】")):
+            sub_text = f"【{sub_text}】"
+        ja_subject_line = f"件名: {sub_text}\n\n"
+
     return f"""======================================================================
 【日本語】本文 (Japanese - Primary)
 ======================================================================
-{japanese_body.strip()}
+{ja_subject_line}{japanese_body.strip()}
 
 ======================================================================
 【English】Original Draft (English Reference)
@@ -575,6 +653,7 @@ def send_email(
     sender_password: Optional[str] = None,
     smtp_host: str = DEFAULT_SMTP_HOST,
     smtp_port: int = DEFAULT_SMTP_PORT,
+    japanese_subject: Optional[str] = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """
@@ -583,7 +662,7 @@ def send_email(
     Supports flexible calling conventions:
     1. send_email(recipient_email, subject, japanese_body, english_body)
     2. send_email(sender_email, sender_password, recipient_email, subject, japanese_body, english_body)
-    3. send_email(recipient_email=..., subject=..., japanese_body=..., english_body=...)
+    3. send_email(recipient_email=..., subject=..., japanese_body=..., english_body=..., japanese_subject=...)
 
     Credentials default to environment variables:
     - GMAIL_ADDRESS or SENDER_EMAIL
@@ -639,6 +718,11 @@ def send_email(
         or kwargs.get("en")
         or ""
     )
+    japanese_subject = (
+        japanese_subject
+        or kwargs.get("japanese_subject")
+        or kwargs.get("ja_subject")
+    )
     sender_email = (
         sender_email
         or kwargs.get("from_email")
@@ -692,8 +776,17 @@ def send_email(
         msg["Date"] = email.utils.formatdate(localtime=True)
         msg["Message-ID"] = email.utils.make_msgid()
 
-        plain_text = build_email_plain_text(japanese_body, english_body)
-        html_content = build_email_html(japanese_body, english_body, subject=subject)
+        plain_text = build_email_plain_text(
+            japanese_body,
+            english_body,
+            japanese_subject=japanese_subject,
+        )
+        html_content = build_email_html(
+            japanese_body,
+            english_body,
+            subject=subject,
+            japanese_subject=japanese_subject,
+        )
 
         # In multipart/alternative, plain text comes first, HTML second (priority)
         part_plain = MIMEText(plain_text, "plain", "utf-8")
@@ -746,13 +839,23 @@ if __name__ == "__main__":
     print("Testing email_sender.py template rendering...")
     sample_ja = "クライアント各位\nプロジェクトが無事に完了しましたことをご報告申し上げます。"
     sample_en = "Dear Client,\nWe are pleased to inform you that the project has been successfully completed."
-    sample_subj = "Project Completion Notification"
+    sample_subj = "【プロジェクト完了のご報告】 Project Completion Notification"
+    sample_ja_subj = "プロジェクト完了のご報告"
 
-    html_out = build_email_html(sample_ja, sample_en, sample_subj)
-    plain_out = build_email_plain_text(sample_ja, sample_en)
+    html_out = build_email_html(
+        sample_ja,
+        sample_en,
+        subject=sample_subj,
+        japanese_subject=sample_ja_subj,
+    )
+    plain_out = build_email_plain_text(
+        sample_ja,
+        sample_en,
+        japanese_subject=sample_ja_subj,
+    )
 
     print("\n--- Plain Text Output Snippet ---")
-    print(plain_out[:200] + "...\n")
+    print(plain_out[:260] + "...\n")
     print("HTML Template size:", len(html_out), "characters")
     print("Email validation test:", is_valid_email("test@example.com"))
 ```
@@ -846,6 +949,34 @@ def extract_subject_from_draft(text: str, default_subject: str = "Bilingual Comm
     return default_subject, text.strip()
 
 
+def console_preview(
+    english_subject: str,
+    japanese_subject: str,
+    recipient: Optional[str] = None,
+    english_body: str = "",
+    japanese_body: str = "",
+    **kwargs: Any,
+) -> None:
+    """
+    Displays bilingual email CLI preview with English and Japanese subjects.
+    """
+    clean_ja = japanese_subject.strip()
+    bracketed_ja = clean_ja if (clean_ja.startswith("【") and clean_ja.endswith("】")) else f"【{clean_ja}】"
+    print(f"\n{'-'*70}")
+    print("📋 EMAIL PREVIEW")
+    print(f"{'-'*70}")
+    print(f"Subject (EN): {english_subject}")
+    print(f"Subject (JA): {bracketed_ja}")
+    print(f"Recipient:    {recipient if recipient else '[Not specified]'}")
+    print(f"\n--- [English Draft] ---\n{english_body}")
+    print(f"\n--- [Japanese Translation] ---\n{japanese_body}")
+    print(f"{'-'*70}")
+
+
+# Backward-compatible alias
+print_console_preview = console_preview
+
+
 def orchestrate(
     topic: str,
     to: Optional[str] = None,
@@ -874,9 +1005,25 @@ def orchestrate(
         print(f"[ERROR] {err_msg}")
         return {"success": False, "message": err_msg}
 
-    # Determine subject: user override > parsed from LLM > fallback
+    # Extract inferred subject from draft and translate to Japanese
     inferred_subject, cleaned_english_body = extract_subject_from_draft(english_draft)
-    final_subject = subject.strip() if subject and subject.strip() else inferred_subject
+    try:
+        raw_ja_subject = translate_english_to_japanese(inferred_subject).strip()
+    except Exception as exc:
+        print(f"[WARN] Failed to translate inferred subject to Japanese: {exc}")
+        raw_ja_subject = inferred_subject
+
+    clean_ja_sub = raw_ja_subject.strip()
+    if clean_ja_sub.startswith("【") and clean_ja_sub.endswith("】"):
+        clean_ja_sub = clean_ja_sub[1:-1].strip()
+    bracketed_ja_subject = f"【{clean_ja_sub}】"
+
+    english_subject = inferred_subject
+    if subject and subject.strip():
+        final_subject = subject.strip()
+        english_subject = subject.strip()
+    else:
+        final_subject = f"{bracketed_ja_subject} {english_subject}"
 
     # Step 2: Translate to Japanese via Google Translate
     print("[2/3] Translating English email to Japanese via Google Translate...")
@@ -888,15 +1035,14 @@ def orchestrate(
         print(f"[ERROR] {err_msg}")
         return {"success": False, "message": err_msg}
 
-    # Display console preview
-    print(f"\n{'-'*70}")
-    print("📋 EMAIL PREVIEW")
-    print(f"{'-'*70}")
-    print(f"Subject:    {final_subject}")
-    print(f"Recipient:  {to if to else '[Not specified]'}")
-    print(f"\n--- [English Draft] ---\n{cleaned_english_body}")
-    print(f"\n--- [Japanese Translation] ---\n{japanese_translation}")
-    print(f"{'-'*70}")
+    # Display console preview with both English and Japanese subjects
+    console_preview(
+        english_subject=english_subject,
+        japanese_subject=bracketed_ja_subject,
+        recipient=to,
+        english_body=cleaned_english_body,
+        japanese_body=japanese_translation,
+    )
 
     # Step 3: Dispatch or Dry-run
     if dry_run:
@@ -905,6 +1051,8 @@ def orchestrate(
             "success": True,
             "dry_run": True,
             "subject": final_subject,
+            "english_subject": english_subject,
+            "japanese_subject": bracketed_ja_subject,
             "english": cleaned_english_body,
             "japanese": japanese_translation,
             "message": "Dry-run succeeded.",
@@ -941,6 +1089,7 @@ def orchestrate(
         subject=final_subject,
         japanese_body=japanese_translation,
         english_body=cleaned_english_body,
+        japanese_subject=bracketed_ja_subject,
     )
 
     if send_result.get("success"):
@@ -1048,17 +1197,69 @@ if __name__ == "__main__":
 | **Lines 23–35** | Terminal UTF-8 fix | Reconfigures stdout/stderr on Windows to support outputting Japanese Unicode characters without throwing `cp1252` encoding errors. |
 | **Lines 36–38** | Internal imports | Imports `generate_email` from `write_email`, `translate_english_to_japanese` from `translate`, and `send_email`, `is_valid_email` from `email_sender`. |
 | **Lines 41–56** | `extract_subject_from_draft` | Parses the LLM's generated output. If the first line starts with `Subject: <Text>`, it extracts `<Text>` as the subject header and separates the remaining lines as the email body. |
-| **Lines 59–72** | `orchestrate` entrypoint | Validates that `topic` is non-empty; prints the workflow header banner. |
-| **Lines 78–89** | Stage 1: Drafting | Calls `generate_email(topic)`. Extracts the subject and separates the cleaned body. Allows explicit `--subject` CLI flag to override the LLM's inferred subject. |
-| **Lines 91–100** | Stage 2: Translating | Passes the cleaned English body to `translate_english_to_japanese()`. Handles network exceptions gracefully. |
-| **Lines 102–110** | Console preview | Displays a clean preview card showing the subject, recipient, English draft, and translated Japanese text. |
-| **Lines 112–121** | Dry-run check | If `--dry-run` was passed, safely terminates execution here without contacting the SMTP server, returning status dict with drafted texts. |
-| **Lines 123–137** | Recipient prompt & validation | If no `--to` address was passed on the command line, prompts the user interactively via `input(...)` in TTY mode. Validates format via `is_valid_email()`. |
-| **Lines 139–147** | Interactive confirmation | Prompts `Send this email to '<recipient>'? [y/N]` unless the `--yes` / `-y` bypass flag was provided. Aborts cleanly on refusal or Ctrl+C. |
-| **Lines 149–161** | Stage 3: SMTP Dispatch | Calls `send_email(...)` with resolved parameters and prints `[SUCCESS]` or `[ERROR]` with return codes. |
-| **Lines 164–212** | `build_parser` | Configures `argparse.ArgumentParser` with short and long flags (`-t`/`--topic`, `-r`/`--to`, `-s`/`--subject`, `-d`/`--dry-run`, `-y`/`--yes`) and detailed practical examples. |
-| **Lines 215–246** | `main()` function | Parses arguments; falls back to interactive prompt if `--topic` is omitted; invokes `orchestrate()`; returns exit code 0 on success or 1 on failure. |
-| **Lines 248–250** | `if __name__ == "__main__":` | Standard Python executable guard calling `sys.exit(main())`. |
+| **Lines 59–84** | `console_preview` | Formats Japanese subject with `【...】` brackets and renders English and Japanese subjects side-by-side in the terminal preview alongside the recipient and email bodies. |
+| **Lines 87–98** | `orchestrate` validation | Validates that `topic` is non-empty; prints the workflow header banner. |
+| **Lines 100–113** | Stage 1: Drafting | Calls `generate_email(topic)` to generate formal English email. |
+| **Lines 115–134** | Subject resolution & translation | Extracts inferred subject, translates it via Google Translate into Japanese, normalizes `【...】` brackets, and constructs the canonical bilingual subject `【Japanese Subject】 English Subject`. |
+| **Lines 136–145** | Stage 2: Translating | Passes the cleaned English body to `translate_english_to_japanese()`. Handles network exceptions gracefully. |
+| **Lines 147–154** | Console preview invocation | Calls `console_preview()` to display the side-by-side subject and body preview. |
+| **Lines 156–169** | Dry-run check | If `--dry-run` was passed, safely terminates execution here without contacting SMTP server, returning status dict with both English and Japanese subjects. |
+| **Lines 171–185** | Recipient prompt & validation | If no `--to` address was passed on the command line, prompts the user interactively via `input(...)` in TTY mode. Validates format via `is_valid_email()`. |
+| **Lines 187–195** | Interactive confirmation | Prompts `Send this email to '<recipient>'? [y/N]` unless the `--yes` / `-y` bypass flag was provided. Aborts cleanly on refusal or Ctrl+C. |
+| **Lines 197–208** | Stage 3: SMTP Dispatch | Calls `send_email(...)` with resolved parameters including `japanese_subject=bracketed_ja_subject`. |
+| **Lines 211–260** | `build_parser` | Configures `argparse.ArgumentParser` with short and long flags (`-t`/`--topic`, `-r`/`--to`, `-s`/`--subject`, `-d`/`--dry-run`, `-y`/`--yes`) and detailed practical examples. |
+| **Lines 263–295** | `main()` function | Parses arguments; falls back to interactive prompt if `--topic` is omitted; invokes `orchestrate()`; returns exit code 0 on success or 1 on failure. |
+| **Lines 297–299** | `if __name__ == "__main__":` | Standard Python executable guard calling `sys.exit(main())`. |
+
+### 7.4 Japanese Subject Line Engineering: Extraction, Side-by-Side Presentation & Bilingual Dispatch
+
+The orchestrator coordinates Japanese subject line translation (*Kenmei* / 件名) to comply with corporate communication protocols (*Business Mail* / ビジネスメール):
+
+#### 1. Isolation & Extraction (`extract_subject_from_draft`)
+When NVIDIA AI drafts an English email, it formats the first line with a standard header: `Subject: <Title>`. The orchestrator isolates this string:
+- If an explicit `--subject` CLI argument is supplied (or configured in the web UI), it takes precedence.
+- Otherwise, `extract_subject_from_draft()` splits the first line, extracting the title into `english_subject` and retaining the remaining lines as `cleaned_english_body`.
+
+#### 2. Dual-Track Translation via Google Translate
+Rather than translating the entire draft as a single monolithic block, the pipeline branches into two independent translation streams:
+1. `japanese_body = translate_english_to_japanese(cleaned_english_body)`
+2. `japanese_subject = translate_english_to_japanese(english_subject)`
+
+This separation ensures the subject line retains high grammatical accuracy without inheriting conversational greetings, line-break anomalies, or sign-offs.
+
+#### 3. Japanese Corporate Bracket Formatting (*Sumitsukikakko* / 隅付き括弧 `【...】`)
+In Japanese corporate correspondence, subject lines must instantly telegraph context and urgency. The system formats the translated subject using Japanese brackets:
+- `【対応完了】` (Action Completed / Issue Resolved)
+- `【ご確認】` or `【ご確認のお願い】` (Confirmation Requested)
+- `【日程調整】` or `【日程変更のお願い】` (Meeting Schedule Coordination)
+- `【進捗報告】` (Progress Status Report)
+- `【重要】` (High Importance / Critical Notice)
+- `【共有】` or `【情報共有】` (Information Sharing / FYI)
+- `【件名: ...】` / `【ご連絡】` (Formal Notice Header)
+
+If the translated subject is not already bracketed, it is enclosed in `【...】` to adhere strictly to corporate etiquette.
+
+#### 4. Side-by-Side Presentation (Review Stage)
+Before dispatch, both versions are presented side-by-side to give the sender full transparency:
+- **CLI Terminal Preview:**
+  ```text
+  Subject (Bilingual):  【対応完了】 Project Completion Notification
+    ├─ English Subject:   Project Completion Notification
+    └─ Japanese Subject:  【対応完了】 プロジェクト完了のお知らせ
+  ```
+- **Streamlit Web Application (`app.py`):**
+  Renders editable input fields for both the English draft and the Japanese translation side-by-side, allowing real-time edits to either subject prior to transmission.
+
+#### 5. Canonical Bilingual Subject Dispatch Convention
+When constructing the RFC 5322 MIME message header, the subject line is formatted as:
+```text
+【Japanese Subject】 English Subject
+```
+*(Example: `【対応完了】 Project Milestone Completion Notification`)*
+
+This provides:
+- **Instant Triage in Japan:** The recipient's email client and mobile notification preview highlight the bracketed Japanese topic first.
+- **Global Searchability & Thread Continuity:** International project members and search filters retain full context via the trailing English title.
 
 ---
 
@@ -1068,13 +1269,28 @@ if __name__ == "__main__":
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Raw Topic   │     │   English    │     │   Japanese   │     │  MIME Multi- │     │ Encrypted    │
-│    String    │ ──> │    Draft     │ ──> │ Translation  │ ──> │ part/altern. │ ──> │ TLS SMTP     │
-│              │     │  (Subject +  │     │    String    │     │ (HTML +      │     │ Delivery     │
-│              │     │    Body)     │     │              │     │  Plain-Text) │     │              │
+│  Raw Topic   │     │   English    │     │   Dual-Track │     │  MIME Multi- │     │ Encrypted    │
+│    String    │ ──> │    Draft     │ ──> │  Translation │ ──> │ part/altern. │ ──> │ TLS SMTP     │
+│              │     │  (Subject +  │     │ (Body + Subj)│     │ (HTML + Text │     │ Delivery     │
+│              │     │    Body)     │     │              │     │  + Subj Hdr) │     │              │
 └──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
     Input               Stage 1               Stage 2              Stage 3             Final State
 ```
+
+**Lifecycle Data Breakdown:**
+1. **User Input:** Topic string (e.g., `"Informing client for project completion"`).
+2. **Stage 1 (Composition Engine - `write_email.py`):**
+   - Extracts `english_subject`: `"Project Completion Notification"`.
+   - Cleans `english_body`: `"Dear [Client Name], I am pleased to inform you..."`.
+3. **Stage 2 (Translation Engine - `translate.py`):**
+   - Translates `japanese_body` via Google Translate (Zero NVIDIA tokens).
+   - Translates `japanese_subject` via Google Translate into polite business Japanese.
+   - Applies Japanese brackets: `【対応完了】 プロジェクト完了のお知らせ`.
+   - Assembles canonical bilingual subject: `【対応完了】 Project Completion Notification`.
+4. **Stage 3 (Delivery Engine - `email_sender.py`):**
+   - Header: `Subject: 【対応完了】 Project Completion Notification`.
+   - MIME body: Primary Rose Card (Japanese) + Reference Amber Card (English) + ASCII plain-text fallback.
+5. **Final State:** Transmitted via TLS (Port 587) to recipient's inbox.
 
 ### 8.2 Calling from Python Code
 
@@ -1082,19 +1298,26 @@ The package also exposes a clean, programmatic Python API via `email_trans/__ini
 
 ```python
 from email_trans import generate_email, translate_english_to_japanese, send_email
+from email_trans.main import extract_subject_from_draft
 
 # 1. Draft formal email
-english_text = generate_email("Informing client of final project delivery")
+english_draft = generate_email("Informing client of final project delivery")
+en_subject, en_body = extract_subject_from_draft(english_draft)
 
-# 2. Translate to Japanese (zero NVIDIA token usage)
-japanese_text = translate_english_to_japanese(english_text)
+# 2. Dual-track translation (zero NVIDIA token usage)
+ja_body = translate_english_to_japanese(en_body)
+raw_ja_subject = translate_english_to_japanese(en_subject)
 
-# 3. Deliver bilingual email
+# Format Japanese subject with corporate bracket convention 【...】
+formatted_ja_subject = f"【{raw_ja_subject}】" if not raw_ja_subject.startswith("【") else raw_ja_subject
+bilingual_subject = f"{formatted_ja_subject} {en_subject}"
+
+# 3. Deliver bilingual email with canonical bilingual subject header
 result = send_email(
     recipient_email="client@example.com",
-    subject="Final Project Delivery / 納品のご案内",
-    japanese_body=japanese_text,
-    english_body=english_text
+    subject=bilingual_subject,
+    japanese_body=ja_body,
+    english_body=en_body
 )
 
 print(result)
@@ -1124,8 +1347,10 @@ python -m email_trans.main --topic "Informing client for project completion" --d
 ----------------------------------------------------------------------
 📋 EMAIL PREVIEW
 ----------------------------------------------------------------------
-Subject:    Project Completion Notification
-Recipient:  [Not specified]
+Subject (Bilingual):  【対応完了】 Project Completion Notification
+  ├─ English Subject:   Project Completion Notification
+  └─ Japanese Subject:  【対応完了】 プロジェクト完了のお知らせ
+Recipient:            [Not specified]
 
 --- [English Draft] ---
 Dear [Client Name],
@@ -1163,7 +1388,7 @@ Project Team
 python -m email_trans.main \
   --topic "Rescheduling quarterly review meeting to next Tuesday 10 AM" \
   --to "client@company.jp" \
-  --subject "Schedule Adjustment / 会議日程の変更" \
+  --subject "Meeting Reschedule Request" \
   --yes
 ```
 
@@ -1180,8 +1405,10 @@ python -m email_trans.main \
 ----------------------------------------------------------------------
 📋 EMAIL PREVIEW
 ----------------------------------------------------------------------
-Subject:    Schedule Adjustment / 会議日程の変更
-Recipient:  client@company.jp
+Subject (Bilingual):  【日程変更のお願い】 Meeting Reschedule Request
+  ├─ English Subject:   Meeting Reschedule Request
+  └─ Japanese Subject:  【日程変更のお願い】 会議日程変更のお願い
+Recipient:            client@company.jp
 
 --- [English Draft] ---
 Dear Partner,
@@ -1215,7 +1442,7 @@ When opened in an email client (Gmail, Outlook, Apple Mail), the recipient sees 
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│  Subject: Schedule Adjustment / 会議日程の変更                         │
+│  Subject: 【日程変更のお願い】 Meeting Reschedule Request              │
 │  From: sender@gmail.com                                                │
 │  To: client@company.jp                                                 │
 ├────────────────────────────────────────────────────────────────────────┤

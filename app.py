@@ -22,6 +22,47 @@ from email_trans.translate import translate_english_to_japanese
 from email_trans.email_sender import send_email, is_valid_email
 from email_trans.main import extract_subject_from_draft
 
+
+def format_japanese_subject(text: str) -> str:
+    """Formats translated Japanese subject text with a clean 【件名】 prefix if not already bracketed."""
+    cleaned = text.strip()
+    if not cleaned:
+        return "【件名】ご連絡"
+    if cleaned.startswith("【"):
+        return cleaned
+    if cleaned.lower().startswith("subject:"):
+        cleaned = cleaned.split(":", 1)[1].strip()
+    if cleaned.startswith("件名:"):
+        cleaned = cleaned[3:].strip()
+    elif cleaned.startswith("件名："):
+        cleaned = cleaned[3:].strip()
+    return f"【件名】{cleaned}"
+
+
+def resolve_dispatch_subject(format_choice: str, en_subject: str, ja_subject: str) -> str:
+    """Builds the final subject line based on the selected dispatch format."""
+    en_sub = en_subject.strip()
+    ja_sub = ja_subject.strip()
+
+    if "Bilingual" in format_choice:
+        if ja_sub and en_sub:
+            if ja_sub.startswith("【"):
+                return f"{ja_sub} {en_sub}"
+            else:
+                return f"【{ja_sub}】 {en_sub}"
+        elif ja_sub:
+            return ja_sub
+        elif en_sub:
+            return en_sub
+        return "Bilingual Communication / 業務連絡"
+    elif "Japanese Only" in format_choice:
+        return ja_sub or en_sub or "【件名】ご連絡"
+    elif "English Only" in format_choice:
+        return en_sub or ja_sub or "Bilingual Communication"
+
+    return en_sub or ja_sub or "Bilingual Communication"
+
+
 # ------------------------------------------------------------------------------
 # Page Configuration
 # ------------------------------------------------------------------------------
@@ -88,12 +129,16 @@ if "topic_input" not in st.session_state:
     st.session_state.topic_input = ""
 if "direct_text_input" not in st.session_state:
     st.session_state.direct_text_input = ""
+if "direct_subject_input" not in st.session_state:
+    st.session_state.direct_subject_input = ""
 if "english_draft" not in st.session_state:
     st.session_state.english_draft = ""
 if "japanese_body" not in st.session_state:
     st.session_state.japanese_body = ""
 if "email_subject" not in st.session_state:
     st.session_state.email_subject = ""
+if "japanese_subject" not in st.session_state:
+    st.session_state.japanese_subject = ""
 if "is_generated" not in st.session_state:
     st.session_state.is_generated = False
 if "generation_error" not in st.session_state:
@@ -291,6 +336,11 @@ with tab_ai:
                 try:
                     ja_trans = translate_english_to_japanese(st.session_state.english_draft)
                     st.session_state.japanese_body = ja_trans
+
+                    # Automatically translate English subject to Japanese
+                    ja_sub_trans = translate_english_to_japanese(st.session_state.email_subject)
+                    st.session_state.japanese_subject = format_japanese_subject(ja_sub_trans)
+
                     st.session_state.is_generated = True
                     st.session_state.generation_error = None
                     st.success("🎉 Email generated and translated successfully! Review it in Step 2 below.")
@@ -302,6 +352,15 @@ with tab_ai:
 with tab_direct:
     st.info("💡 **How it works:** Already have text or an email written? Type or paste it here (like *'hello'* or a full message) and click below to translate it directly to Japanese using Google Translate without invoking the LLM.")
     
+    direct_sub_input = st.text_input(
+        "Optional Subject Line (English):",
+        value=st.session_state.direct_subject_input,
+        placeholder="e.g. Project Status Update or Milestone Review",
+        key="direct_sub_area",
+        help="Optional: Enter a subject line to translate directly alongside the body."
+    )
+    st.session_state.direct_subject_input = direct_sub_input
+
     direct_input = st.text_area(
         "Enter English text or email body to translate:",
         value=st.session_state.direct_text_input,
@@ -309,20 +368,32 @@ with tab_direct:
         height=110,
         key="direct_area",
     )
+    st.session_state.direct_text_input = direct_input
 
     btn_direct_trans = st.button("🌐 Translate Directly to Japanese", type="primary", use_container_width=True, key="btn_direct")
 
     if btn_direct_trans:
-        if not direct_input.strip():
-            st.warning("⚠️ Please enter some English text to translate.")
+        if not direct_input.strip() and not direct_sub_input.strip():
+            st.warning("⚠️ Please enter some English text or a subject line to translate.")
         else:
             with st.spinner("🌐 Translating directly using Google Translate..."):
                 try:
-                    ja_trans = translate_english_to_japanese(direct_input.strip())
-                    st.session_state.english_draft = direct_input.strip()
-                    st.session_state.japanese_body = ja_trans
-                    if not st.session_state.email_subject:
-                        st.session_state.email_subject = "Communication / ご連絡"
+                    if direct_input.strip():
+                        ja_trans = translate_english_to_japanese(direct_input.strip())
+                        st.session_state.english_draft = direct_input.strip()
+                        st.session_state.japanese_body = ja_trans
+                    else:
+                        st.session_state.english_draft = ""
+                        st.session_state.japanese_body = ""
+
+                    if direct_sub_input.strip():
+                        ja_sub_trans = translate_english_to_japanese(direct_sub_input.strip())
+                        st.session_state.email_subject = direct_sub_input.strip()
+                        st.session_state.japanese_subject = format_japanese_subject(ja_sub_trans)
+                    else:
+                        st.session_state.email_subject = "Communication / 業務連絡"
+                        st.session_state.japanese_subject = "【件名】ご連絡"
+
                     st.session_state.is_generated = True
                     st.session_state.generation_error = None
                     st.success("🎉 Translation completed! Review it in Step 2 below.")
@@ -337,8 +408,19 @@ if st.session_state.is_generated:
     st.markdown("---")
     st.markdown("### 2️⃣ Review & Edit Content")
     
-    subject_input = st.text_input("Subject Line:", value=st.session_state.email_subject)
-    st.session_state.email_subject = subject_input
+    col_sub_en, col_sub_ja = st.columns(2)
+    with col_sub_en:
+        edited_sub_en = st.text_input(
+            "📝 English Subject Line:",
+            value=st.session_state.email_subject,
+        )
+        st.session_state.email_subject = edited_sub_en
+    with col_sub_ja:
+        edited_sub_ja = st.text_input(
+            "🌸 Japanese Subject Line (件名):",
+            value=st.session_state.japanese_subject,
+        )
+        st.session_state.japanese_subject = edited_sub_ja
 
     col_edit_en, col_edit_ja = st.columns(2)
     with col_edit_en:
@@ -351,9 +433,12 @@ if st.session_state.is_generated:
         )
         st.session_state.english_draft = edited_en
         
-        if st.button("🔄 Re-translate to Japanese", help="Re-translates current English text to Japanese"):
+        if st.button("🔄 Re-translate to Japanese", help="Re-translates current English subject and body to Japanese"):
             with st.spinner("Translating..."):
                 st.session_state.japanese_body = translate_english_to_japanese(st.session_state.english_draft)
+                if st.session_state.email_subject.strip():
+                    ja_sub_trans = translate_english_to_japanese(st.session_state.email_subject.strip())
+                    st.session_state.japanese_subject = format_japanese_subject(ja_sub_trans)
                 st.rerun()
 
     with col_edit_ja:
@@ -374,10 +459,18 @@ if st.session_state.is_generated:
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 650px; margin: 10px auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; background: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
             <div style="background: #f8f9fa; padding: 18px; border-left: 4px solid #d63384; border-radius: 8px; margin-bottom: 16px;">
                 <h4 style="color: #d63384; margin-top: 0; margin-bottom: 8px; font-size: 15px;">🇯🇵 Japanese Translation (日本語)</h4>
+                <div style="margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dashed #e2e8f0;">
+                    <span style="font-size: 12px; font-weight: 700; color: #d63384; text-transform: uppercase;">件名:</span>
+                    <span style="font-size: 14px; font-weight: 600; color: #1e293b; margin-left: 6px;">{html.escape(st.session_state.japanese_subject)}</span>
+                </div>
                 <div style="font-size: 15px; line-height: 1.6; color: #1e293b; white-space: pre-wrap;">{html.escape(st.session_state.japanese_body)}</div>
             </div>
             <div style="background: #fff3cd; padding: 18px; border-left: 4px solid #856404; border-radius: 8px;">
                 <h4 style="color: #856404; margin-top: 0; margin-bottom: 8px; font-size: 15px;">🇬🇧 Original (English)</h4>
+                <div style="margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dashed #ffeeba;">
+                    <span style="font-size: 12px; font-weight: 700; color: #856404; text-transform: uppercase;">Subject:</span>
+                    <span style="font-size: 14px; font-weight: 600; color: #475569; margin-left: 6px;">{html.escape(st.session_state.email_subject)}</span>
+                </div>
                 <div style="font-size: 14px; line-height: 1.6; color: #475569; white-space: pre-wrap;">{html.escape(st.session_state.english_draft)}</div>
             </div>
             <hr style="margin-top: 24px; border: none; border-top: 1px solid #e2e8f0;">
@@ -394,6 +487,24 @@ if st.session_state.is_generated:
     st.markdown("---")
     st.markdown("### 3️⃣ Dispatch via SMTP")
     
+    subject_dispatch_format = st.radio(
+        "Subject Dispatch Format:",
+        options=[
+            "🌐 Bilingual: 【Japanese Subject】 English Subject",
+            "🇯🇵 Japanese Only",
+            "🇬🇧 English Only",
+        ],
+        index=0,
+        help="Select the format for the email subject header when dispatched to recipients."
+    )
+
+    final_dispatch_subject = resolve_dispatch_subject(
+        subject_dispatch_format,
+        st.session_state.email_subject,
+        st.session_state.japanese_subject
+    )
+    st.caption(f"📨 **Subject to be dispatched:** `{final_dispatch_subject}`")
+
     col_disp1, col_disp2 = st.columns([2, 1])
     with col_disp1:
         recipient_to = st.text_input("Recipient Email Address:", placeholder="client@company.jp or colleague@example.com")
@@ -406,7 +517,7 @@ if st.session_state.is_generated:
 
     if btn_send:
         if dry_run_check:
-            st.info("🧪 [Dry-Run Mode] Validation passed! No real email was dispatched.")
+            st.info(f"🧪 [Dry-Run Mode] Validation passed! Subject: '{final_dispatch_subject}'. No real email was dispatched.")
         elif not recipient_to.strip():
             st.error("❌ Recipient email address cannot be empty.")
         elif not is_valid_email(recipient_to.strip()):
@@ -423,7 +534,7 @@ if st.session_state.is_generated:
                         sender_email=current_sender,
                         sender_password=current_pw,
                         recipient_email=recipient_to.strip(),
-                        subject=st.session_state.email_subject,
+                        subject=final_dispatch_subject,
                         japanese_body=st.session_state.japanese_body,
                         english_body=st.session_state.english_draft,
                     )

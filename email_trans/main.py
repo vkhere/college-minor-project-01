@@ -56,6 +56,34 @@ def extract_subject_from_draft(text: str, default_subject: str = "Bilingual Comm
     return default_subject, text.strip()
 
 
+def console_preview(
+    english_subject: str,
+    japanese_subject: str,
+    recipient: Optional[str] = None,
+    english_body: str = "",
+    japanese_body: str = "",
+    **kwargs: Any,
+) -> None:
+    """
+    Displays bilingual email CLI preview with English and Japanese subjects.
+    """
+    clean_ja = japanese_subject.strip()
+    bracketed_ja = clean_ja if (clean_ja.startswith("【") and clean_ja.endswith("】")) else f"【{clean_ja}】"
+    print(f"\n{'-'*70}")
+    print("📋 EMAIL PREVIEW")
+    print(f"{'-'*70}")
+    print(f"Subject (EN): {english_subject}")
+    print(f"Subject (JA): {bracketed_ja}")
+    print(f"Recipient:    {recipient if recipient else '[Not specified]'}")
+    print(f"\n--- [English Draft] ---\n{english_body}")
+    print(f"\n--- [Japanese Translation] ---\n{japanese_body}")
+    print(f"{'-'*70}")
+
+
+# Backward-compatible alias
+print_console_preview = console_preview
+
+
 def orchestrate(
     topic: str,
     to: Optional[str] = None,
@@ -84,9 +112,25 @@ def orchestrate(
         print(f"[ERROR] {err_msg}")
         return {"success": False, "message": err_msg}
 
-    # Determine subject: user override > parsed from LLM > fallback
+    # Extract inferred subject from draft and translate to Japanese
     inferred_subject, cleaned_english_body = extract_subject_from_draft(english_draft)
-    final_subject = subject.strip() if subject and subject.strip() else inferred_subject
+    try:
+        raw_ja_subject = translate_english_to_japanese(inferred_subject).strip()
+    except Exception as exc:
+        print(f"[WARN] Failed to translate inferred subject to Japanese: {exc}")
+        raw_ja_subject = inferred_subject
+
+    clean_ja_sub = raw_ja_subject.strip()
+    if clean_ja_sub.startswith("【") and clean_ja_sub.endswith("】"):
+        clean_ja_sub = clean_ja_sub[1:-1].strip()
+    bracketed_ja_subject = f"【{clean_ja_sub}】"
+
+    english_subject = inferred_subject
+    if subject and subject.strip():
+        final_subject = subject.strip()
+        english_subject = subject.strip()
+    else:
+        final_subject = f"{bracketed_ja_subject} {english_subject}"
 
     # Step 2: Translate to Japanese via Google Translate
     print("[2/3] Translating English email to Japanese via Google Translate...")
@@ -98,15 +142,14 @@ def orchestrate(
         print(f"[ERROR] {err_msg}")
         return {"success": False, "message": err_msg}
 
-    # Display console preview
-    print(f"\n{'-'*70}")
-    print("📋 EMAIL PREVIEW")
-    print(f"{'-'*70}")
-    print(f"Subject:    {final_subject}")
-    print(f"Recipient:  {to if to else '[Not specified]'}")
-    print(f"\n--- [English Draft] ---\n{cleaned_english_body}")
-    print(f"\n--- [Japanese Translation] ---\n{japanese_translation}")
-    print(f"{'-'*70}")
+    # Display console preview with both English and Japanese subjects
+    console_preview(
+        english_subject=english_subject,
+        japanese_subject=bracketed_ja_subject,
+        recipient=to,
+        english_body=cleaned_english_body,
+        japanese_body=japanese_translation,
+    )
 
     # Step 3: Dispatch or Dry-run
     if dry_run:
@@ -115,6 +158,8 @@ def orchestrate(
             "success": True,
             "dry_run": True,
             "subject": final_subject,
+            "english_subject": english_subject,
+            "japanese_subject": bracketed_ja_subject,
             "english": cleaned_english_body,
             "japanese": japanese_translation,
             "message": "Dry-run succeeded.",
@@ -151,6 +196,7 @@ def orchestrate(
         subject=final_subject,
         japanese_body=japanese_translation,
         english_body=cleaned_english_body,
+        japanese_subject=bracketed_ja_subject,
     )
 
     if send_result.get("success"):
