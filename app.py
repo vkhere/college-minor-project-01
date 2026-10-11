@@ -19,7 +19,7 @@ load_dotenv()
 
 from email_trans.write_email import generate_email
 from email_trans.translate import translate_english_to_japanese
-from email_trans.email_sender import send_email, is_valid_email, build_email_html
+from email_trans.email_sender import send_email, is_valid_email
 from email_trans.main import extract_subject_from_draft
 
 # ------------------------------------------------------------------------------
@@ -86,6 +86,8 @@ st.markdown("""
 # ------------------------------------------------------------------------------
 if "topic_input" not in st.session_state:
     st.session_state.topic_input = ""
+if "direct_text_input" not in st.session_state:
+    st.session_state.direct_text_input = ""
 if "english_draft" not in st.session_state:
     st.session_state.english_draft = ""
 if "japanese_body" not in st.session_state:
@@ -170,59 +172,101 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ------------------------------------------------------------------------------
-# Step 1: Topic Prompt & Generation
+# Step 1: Input Mode Selection (AI Composition vs Direct Translation)
 # ------------------------------------------------------------------------------
-st.markdown("### 1️⃣ Compose Email Topic")
+st.markdown("### 1️⃣ Choose Input Mode & Provide Content")
 
-# Quick Example Topic Chips
-col_chips = st.columns([1, 1, 1, 1])
-with col_chips[0]:
-    if st.button("🚀 Milestone Completed", use_container_width=True):
-        st.session_state.topic_input = "Informing client that Project Milestone 1 has been completed on schedule with deliverables attached."
-with col_chips[1]:
-    if st.button("📅 Reschedule Meeting", use_container_width=True):
-        st.session_state.topic_input = "Requesting to reschedule the technical sync from Thursday 3 PM to Friday 10 AM due to an unavoidable conflict."
-with col_chips[2]:
-    if st.button("💼 Project Delivery Update", use_container_width=True):
-        st.session_state.topic_input = "Providing a weekly status report on system performance, bug fixes, and next sprint goals."
-with col_chips[3]:
-    if st.button("🤝 Partnership Proposal", use_container_width=True):
-        st.session_state.topic_input = "Reaching out to explore a collaborative partnership between our software engineering teams."
+tab_ai, tab_direct = st.tabs([
+    "🤖 Mode A: AI Compose & Translate (From Topic/Idea)",
+    "⚡ Mode B: Direct Translate (Translate existing text/email)"
+])
 
-topic_text = st.text_area(
-    "Enter a brief topic, intent, or bullet points:",
-    value=st.session_state.topic_input,
-    placeholder="e.g. Informing client that the software integration phase is completed and ready for testing...",
-    height=90,
-)
+# --------------------- TAB A: AI COMPOSE & TRANSLATE ---------------------
+with tab_ai:
+    st.info("💡 **How it works:** Enter a short topic, idea, or bullet points. The NVIDIA AI will write a complete, formal corporate English email, which will then be translated to Japanese.")
+    
+    # Quick Example Topic Chips
+    col_chips = st.columns([1, 1, 1, 1])
+    with col_chips[0]:
+        if st.button("🚀 Milestone Completed", use_container_width=True):
+            st.session_state.topic_input = "Informing client that Project Milestone 1 has been completed on schedule with deliverables attached."
+    with col_chips[1]:
+        if st.button("📅 Reschedule Meeting", use_container_width=True):
+            st.session_state.topic_input = "Requesting to reschedule the technical sync from Thursday 3 PM to Friday 10 AM due to an unavoidable conflict."
+    with col_chips[2]:
+        if st.button("💼 Delivery Update", use_container_width=True):
+            st.session_state.topic_input = "Providing a weekly status report on system performance, bug fixes, and next sprint goals."
+    with col_chips[3]:
+        if st.button("🤝 Partnership Proposal", use_container_width=True):
+            st.session_state.topic_input = "Reaching out to explore a collaborative partnership between our software engineering teams."
 
-btn_generate = st.button("✨ Generate & Translate Email", type="primary", use_container_width=True)
+    topic_text = st.text_area(
+        "Enter email topic, intent, or bullet points:",
+        value=st.session_state.topic_input,
+        placeholder="e.g. Informing client that the software integration phase is completed and ready for testing...",
+        height=90,
+        key="topic_area",
+        help="Type your topic here and click the button below to generate and translate."
+    )
 
-if btn_generate:
-    if not topic_text.strip():
-        st.warning("⚠️ Please provide an email topic or select one of the quick presets above.")
-    elif not os.getenv("NVIDIA_API_KEY"):
-        st.error("❌ NVIDIA API Key is required. Please enter it in the sidebar or set NVIDIA_API_KEY in your .env file.")
-    else:
-        with st.spinner("🤖 [1/2] Drafting formal English email using NVIDIA AI Foundation Endpoints..."):
-            try:
-                raw_draft = generate_email(topic_text.strip())
-                inferred_sub, cleaned_body = extract_subject_from_draft(raw_draft)
-                st.session_state.email_subject = inferred_sub
-                st.session_state.english_draft = cleaned_body
-            except Exception as e:
-                st.error(f"❌ Email generation failed: {e}")
-                st.stop()
+    btn_generate_ai = st.button("✨ Generate Formal Email & Translate", type="primary", use_container_width=True, key="btn_ai")
 
-        with st.spinner("🌐 [2/2] Translating English email to Japanese using Google Translate..."):
-            try:
-                ja_trans = translate_english_to_japanese(st.session_state.english_draft)
-                st.session_state.japanese_body = ja_trans
-                st.session_state.is_generated = True
-                st.success("🎉 Email generated and translated successfully!")
-            except Exception as e:
-                st.error(f"❌ Translation failed: {e}")
-                st.stop()
+    if btn_generate_ai:
+        if not topic_text.strip():
+            st.warning("⚠️ Please provide an email topic or select one of the quick presets above.")
+        elif not os.getenv("NVIDIA_API_KEY"):
+            st.error("❌ NVIDIA API Key is required for email generation. Please enter it in the sidebar or set NVIDIA_API_KEY in your .env file.")
+        else:
+            with st.spinner("🤖 [1/2] Drafting formal English email using NVIDIA AI Foundation Endpoints..."):
+                try:
+                    raw_draft = generate_email(topic_text.strip())
+                    inferred_sub, cleaned_body = extract_subject_from_draft(raw_draft)
+                    st.session_state.email_subject = inferred_sub
+                    st.session_state.english_draft = cleaned_body
+                except Exception as e:
+                    st.error(f"❌ Email generation failed: {e}")
+                    st.stop()
+
+            with st.spinner("🌐 [2/2] Translating English email to Japanese using Google Translate..."):
+                try:
+                    ja_trans = translate_english_to_japanese(st.session_state.english_draft)
+                    st.session_state.japanese_body = ja_trans
+                    st.session_state.is_generated = True
+                    st.success("🎉 Email generated and translated successfully! Review it in Step 2 below.")
+                except Exception as e:
+                    st.error(f"❌ Translation failed: {e}")
+                    st.stop()
+
+# --------------------- TAB B: DIRECT TEXT TRANSLATION ---------------------
+with tab_direct:
+    st.info("💡 **How it works:** Already have text or an email written? Type or paste it here (like *'hello'* or a full message) and click below to translate it directly to Japanese using Google Translate without invoking the LLM.")
+    
+    direct_input = st.text_area(
+        "Enter English text or email body to translate:",
+        value=st.session_state.direct_text_input,
+        placeholder="e.g. Hello, we are pleased to inform you that our project is ready for review.",
+        height=110,
+        key="direct_area",
+    )
+
+    btn_direct_trans = st.button("🌐 Translate Directly to Japanese", type="primary", use_container_width=True, key="btn_direct")
+
+    if btn_direct_trans:
+        if not direct_input.strip():
+            st.warning("⚠️ Please enter some English text to translate.")
+        else:
+            with st.spinner("🌐 Translating directly using Google Translate..."):
+                try:
+                    ja_trans = translate_english_to_japanese(direct_input.strip())
+                    st.session_state.english_draft = direct_input.strip()
+                    st.session_state.japanese_body = ja_trans
+                    if not st.session_state.email_subject:
+                        st.session_state.email_subject = "Communication / ご連絡"
+                    st.session_state.is_generated = True
+                    st.success("🎉 Translation completed! Review it in Step 2 below.")
+                except Exception as e:
+                    st.error(f"❌ Direct translation failed: {e}")
+                    st.stop()
 
 # ------------------------------------------------------------------------------
 # Step 2: Review, Edit & Live Preview
@@ -280,7 +324,7 @@ if st.session_state.is_generated:
             </p>
         </div>
         """
-        st.components.v1.html(preview_html, height=450, scrolling=True)
+        st.html(preview_html)
 
     # --------------------------------------------------------------------------
     # Step 3: Dispatch via Gmail SMTP
