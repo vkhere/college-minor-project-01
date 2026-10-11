@@ -1,0 +1,15 @@
+# Interactive Web Application UI
+streamlit>=1.30.0
+
+# Core Translation Engine (Pure Python Google Translate wrapper)
+deep-translator>=1.11.4
+
+# Environment & Secrets Management
+python-dotenv>=1.0.0
+
+# HTTP Networking for NVIDIA AI Endpoints
+requests>=2.31.0
+
+# LangChain NVIDIA AI Endpoints Integration (Optional / Recommended)
+langchain-core>=0.1.30
+langchain-nvidia-ai-endpoints>=0.1.0

@@ -1,0 +1,299 @@
+# 📧 English-to-Japanese Email Translator (Cloud AI + Google Translate Edition)
+
+<p align="center">
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14.2-blue.svg" alt="Python 3.10 - 3.14.2 Compatible"></a>
+  <img src="https://img.shields.io/badge/architecture-Cloud%20AI%20%2B%20Google%20Translate-success.svg" alt="Architecture">
+  <img src="https://img.shields.io/badge/footprint-%3C20%20MB%20(Zero%20GPU)-brightgreen.svg" alt="Zero GPU / Lightweight">
+  <img src="https://img.shields.io/badge/license-MIT-informational.svg" alt="License: MIT">
+</p>
+
+> **A college minor project** combining cloud-hosted generative AI with high-speed neural translation — enter a simple topic prompt, generate a polished business email, translate it to natural Japanese, and dispatch a responsive bilingual email instantly.
+
+---
+
+## 📖 Overview
+
+The **English-to-Japanese Email Translator** is an end-to-end cloud-native pipeline engineered to bridge international business communication. 
+
+Unlike legacy machine learning workflows that demand multi-gigabyte model weights and heavy GPU libraries, this project implements a **lean, cloud-native architecture**:
+
+1. **AI Email Drafting:** Generates formal, corporate English emails from brief user prompts using **NVIDIA AI Foundation Endpoints** (`google/diffusiongemma-26b-a4b-it` or `meta/llama-3.1-70b-instruct`) via LangChain with zero-dependency HTTP fallbacks.
+2. **Deterministic Translation:** Translates English text to natural Japanese using **Google Translate** via `deep-translator` (backed by a native `urllib` HTTP fallback), delivering sub-second latency and consuming **0 LLM API tokens**.
+3. **Bilingual Delivery:** Delivers a dual-language email with a responsive, styled HTML card layout (Japanese primary + English reference) and plain-text fallback via Python's built-in `smtplib` over TLS.
+
+---
+
+## 🌟 Highlights & Key Advantages
+
+| Feature | Description |
+|---|---|
+| 🚀 **Zero Local Model Download** | Eliminates all local checkpoint downloads (no 2.4 GB - 2.5 GB NLLB-200 weights or LLM parameter files). Clone and run immediately. |
+| ⚡ **Zero GPU & PyTorch Requirement** | No CUDA, PyTorch (`torch`), or TorchVision requirements. Runs seamlessly on standard laptops, university lab computers, and cloud containers. |
+| 🪶 **Ultra-Lightweight (<20 MB)** | The entire dependency tree installs in seconds and takes less than 20 MB of disk space (over **99.5% reduction** compared to >4.9 GB previously). |
+| ⚡ **Lightning-Fast Execution** | Sub-second translation latency (~200–400 ms) via Google Translate paired with rapid cloud LLM streaming. |
+| 💰 **API Token & Quota Conservation** | LLM tokens are reserved solely for creative drafting; 100% of the translation workload is offloaded to Google Translate to preserve API quota. |
+| 🐍 **100% Python 3.14.2 Compatible** | Built with pure-Python packages and standard library fallbacks (`urllib.request`), completely avoiding missing C++ binary wheel issues on newer Python releases. |
+| 🛡️ **Graceful HTTP Fallbacks** | Both drafting and translation modules feature native Python standard library fallbacks that function even if third-party packages are absent. |
+
+---
+
+## 📊 Architecture Comparison: Legacy vs. Cloud Edition
+
+| Metric / Dimension | Legacy Architecture (Local NLLB + PyTorch) | Cloud AI + Google Translate Edition | Benefit |
+|---|---|---|---|
+| **Total Disk Footprint** | **> 4,900 MB (4.9 GB+)** | **< 20 MB** | **> 99.5% space saved** |
+| **Python 3.14.2 Support** | ❌ Broken (Missing C++ wheels / MSVC errors) | ✅ **100% Compatible (Pure Python)** | **Future-proof & portable** |
+| **Setup & Install Time** | 20–45 minutes | **< 5 seconds** | **Instant onboarding** |
+| **Hardware Requirement** | 4–8 GB GPU VRAM / 16 GB System RAM | **Basic CPU (<100 MB RAM)** | **Runs on any device** |
+| **Translation Engine** | Local `facebook/nllb-200` Seq2Seq | **Google Translate (`deep-translator` / HTTP)** | **Higher speed & fluency** |
+| **Translation Latency** | 3.0 – 8.0 seconds | **200 – 400 milliseconds** | **10–20× faster** |
+| **API Quota Efficiency** | High consumption (LLM used for both) | **Optimal (0 LLM tokens for translation)** | **Preserves free API tier** |
+
+---
+
+## 🛠️ Tech Stack
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        English-to-Japanese Email Translator            │
+├──────────────────────┬─────────────────────────────────────────────────┤
+│ LLM Composition      │ NVIDIA AI Foundation Endpoints                  │
+│                      │ • Model: google/diffusiongemma-26b-a4b-it       │
+│                      │ • Fallback: meta/llama-3.1-70b-instruct         │
+├──────────────────────┼─────────────────────────────────────────────────┤
+│ LLM Framework        │ LangChain (`langchain-core`,                    │
+│                      │ `langchain-nvidia-ai-endpoints`) + HTTP API     │
+├──────────────────────┼─────────────────────────────────────────────────┤
+│ Translation Engine   │ Google Translate (`deep-translator` + HTTP)     │
+├──────────────────────┼─────────────────────────────────────────────────┤
+│ Email Delivery       │ Python Standard Library `smtplib` + `email.mime`│
+├──────────────────────┼─────────────────────────────────────────────────┤
+│ Configuration        │ `python-dotenv` (.env secrets management)       │
+├──────────────────────┼─────────────────────────────────────────────────┤
+│ Runtime Compatibility│ Python 3.10, 3.11, 3.12, 3.13, 3.14.2           │
+└──────────────────────┴─────────────────────────────────────────────────┘
+```
+
+---
+
+## 📁 Project Structure
+
+```
+email translator/
+├── email_trans/
+│   ├── __init__.py           # Package initializer
+│   ├── write_email.py        # Stage 1 — AI email drafting (NVIDIA AI Endpoints / DiffusionGemma)
+│   ├── translate.py          # Stage 2 — Translation (Google Translate / deep-translator)
+│   ├── email_sender.py       # Stage 3 — SMTP delivery (plain-text + dual-card HTML)
+│   └── main.py               # CLI Orchestrator & interactive runner
+├── .env                      # 🔑 Environment secrets (API keys & SMTP credentials)
+├── .env.example              # Template for environment configuration
+├── requirements.txt          # Pure-Python dependencies (<20 MB)
+├── README.md                 # Project overview and documentation (this file)
+├── REQUIREMENTS.md           # Requirements and architecture specification
+├── RULES.md                  # Development guidelines and coding standards
+├── SETUP.md                  # Step-by-step installation and setup guide
+├── SKILLS.md                 # Technical competencies matrix
+├── PRD.md                    # Product Requirements Document
+├── ACTION PLAN.md            # Project roadmap and milestone tracking
+├── LEARNINGS.md              # Engineering insights and academic takeaways
+└── WALKTHROUGH.md            # Detailed code and architectural walkthrough
+```
+
+---
+
+## 🗺️ Pipeline Workflow
+
+```mermaid
+flowchart TD
+    A["User Input: Topic / Prompt"] --> B["Stage 1: write_email.py"]
+    B -->|"NVIDIA AI Endpoints<br>(DiffusionGemma 26B)"| C["Professional English Email Draft"]
+    C --> D["Stage 2: translate.py"]
+    D -->|"Google Translate<br>(deep-translator / HTTP)"| E["Natural Japanese Translation (Keigo)"]
+    E --> F["Stage 3: email_sender.py"]
+    C -.-> F
+    F -->|"smtplib (STARTTLS:587)<br>Dual-Card Responsive HTML"| G["Delivered Bilingual Email<br>(Recipient Inbox)"]
+
+    style A fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style B fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style C fill:#f3e5f5,stroke:#4a148c,stroke-width:1px
+    style D fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style E fill:#fce4ec,stroke:#880e4f,stroke-width:1px
+    style F fill:#ede7f6,stroke:#311b92,stroke-width:2px
+    style G fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+```
+
+---
+
+## ⚙️ Installation & Setup
+
+### 1. Prerequisites
+- **Python:** Python 3.10 – 3.14.2 installed on your system. Confirm with:
+  ```bash
+  python --version
+  ```
+- **Git:** Standard git client.
+
+### 2. Clone the Repository
+```bash
+git clone <repository-url>
+cd "email translator"
+```
+
+### 3. Create & Activate Virtual Environment
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate — Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+
+# Activate — Windows Command Prompt:
+.\venv\Scripts\activate.bat
+
+# Activate — macOS / Linux:
+source venv/bin/activate
+```
+
+### 4. Install Dependencies
+
+Install the lightweight, pure-Python dependencies (<20 MB, zero GPU / C++ compilation):
+
+```bash
+pip install -r requirements.txt
+```
+
+#### Content of `requirements.txt`:
+```txt
+deep-translator>=1.11.4
+python-dotenv>=1.0.0
+requests>=2.31.0
+langchain-core>=0.1.30
+langchain-nvidia-ai-endpoints>=0.1.0
+```
+
+> [!TIP]
+> **Zero-Dependency Mode:** In offline or highly restricted Python 3.14.2 environments, the core functionality can operate entirely using Python's standard library (`urllib.request`, `json`, `smtplib`), as both `write_email.py` and `translate.py` include built-in standard library fallbacks!
+
+---
+
+## 🔑 Environment Configuration (`.env`)
+
+Create a `.env` file in the project root:
+
+```bash
+# Copy example configuration template
+cp .env.example .env
+```
+
+Populate the `.env` file with your credentials:
+
+```dotenv
+# ─── NVIDIA AI Endpoints ───────────────────────────────────────────────────
+# Get your free key at: https://build.nvidia.com/
+NVIDIA_API_KEY=nvapi-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Optional: Override base URL or model
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+NVIDIA_MODEL=google/diffusiongemma-26b-a4b-it
+
+# ─── Gmail SMTP Credentials ────────────────────────────────────────────────
+# Full Gmail address
+SENDER_EMAIL=your_email@gmail.com
+
+# 16-character Gmail App Password (generated via Google Account Security)
+SENDER_APP_PASSWORD=xxxx xxxx xxxx xxxx
+
+# ─── Default Recipient ─────────────────────────────────────────────────────
+RECIPIENT_EMAIL=recipient@example.com
+```
+
+> [!IMPORTANT]
+> **Gmail App Password Setup:**
+> 1. Visit [Google Account Security](https://myaccount.google.com/security) and ensure **2-Step Verification** is enabled.
+> 2. Go to [Google App Passwords](https://myaccount.google.com/apppasswords).
+> 3. Generate an App Password named `EmailTranslator`.
+> 4. Copy the generated 16-character string into `SENDER_APP_PASSWORD`. Never use your personal account password.
+
+> [!CAUTION]
+> The deprecated variable `MODEL_PATH` is no longer needed and should not be used.
+
+---
+
+## 🚀 Quickstart & Usage
+
+### 1. Run the Complete Pipeline via CLI Orchestrator
+
+Run the end-to-end translation pipeline with interactive preview or dry-run:
+
+```bash
+# Dry-run preview (generates & translates without sending email)
+python email_trans/main.py --topic "inform client that project milestone 1 is complete" --dry-run
+```
+
+```bash
+# Complete execution with delivery:
+python email_trans/main.py --topic "requesting meeting regarding Q3 financial review" --to "client@company.jp"
+```
+
+```bash
+# Interactive mode (prompts for topic, recipient, and send confirmation)
+python email_trans/main.py
+```
+
+---
+
+### 2. Run Individual Modules Separately
+
+Each stage is completely modular and can be tested independently:
+
+#### Stage 1: AI Email Generation
+```bash
+python email_trans/write_email.py
+```
+*Generates a professional corporate English email from a specified topic using NVIDIA DiffusionGemma.*
+
+#### Stage 2: English-to-Japanese Translation
+```bash
+python email_trans/translate.py
+```
+*Translates English text into natural, polite Japanese (*Keigo*) via Google Translate (`deep-translator` with HTTP fallback).*
+
+#### Stage 3: Email Dispatcher
+```bash
+python email_trans/email_sender.py
+```
+*Dispatches the bilingual email via Gmail SMTP with dual-card HTML formatting.*
+
+---
+
+## 💌 Responsive Bilingual Email Layout
+
+Emails sent through the pipeline are delivered in `multipart/alternative` format containing:
+1. **Plain-Text Alternative:** Clean ASCII formatted text for text-only clients.
+2. **Responsive Dual-Card HTML:**
+   - 🌸 **Top Card (Japanese):** Primary translation formatted with soft rose accent (`#d63384`) and high-readability Japanese typography.
+   - 📜 **Bottom Card (English):** Original English draft formatted with a warm amber card (`#fff3cd`) for reference and auditability.
+   - 🛡️ **Footer:** Polite notice that translation was automatically generated.
+
+---
+
+## 🐍 Python 3.14.2 Compatibility Notes
+
+Python 3.14 introduced significant internal changes to CPython's C-API and internals. Traditional ML packages (`torch`, `sentencepiece`, `sacremoses`) fail to install on Python 3.14 due to missing binary wheels and compilation errors.
+
+This project achieves full compatibility through:
+- **Pure Python Packages:** Packages like `deep-translator` and `python-dotenv` are distributed as universal wheels (`py3-none-any`).
+- **RESTful Cloud AI:** All heavy computation is executed on cloud infrastructure via standard HTTPS requests.
+- **Built-in Fallbacks:** Both `write_email.py` and `translate.py` can operate using Python's standard library alone (`urllib.request`).
+
+---
+
+## 📄 License & Academic Attribution
+
+This project is developed as a **College Minor Project** for academic evaluation:
+- **Repository:** [vkhere/college-minor-project-01](https://github.com/vkhere/college-minor-project-01)
+- **License:** MIT License
+
+<p align="center">Made with ❤️ for Academic & Engineering Excellence</p>

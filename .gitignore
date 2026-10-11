@@ -1,0 +1,81 @@
+# ==============================================================================
+# Security & Secret Management (CRITICAL - NEVER COMMIT TO GITHUB)
+# ==============================================================================
+.env
+.env.*
+*.env
+!.env.example
+.env.local
+.env.development
+.env.production
+.streamlit/secrets.toml
+secrets/
+*.pem
+*.key
+*.pfx
+
+# ==============================================================================
+# Python Bytecode, Caches & Build Artifacts
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyd
+*.so
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==============================================================================
+# Virtual Environments
+# ==============================================================================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ==============================================================================
+# Testing & Code Quality
+# ==============================================================================
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ==============================================================================
+# Operating System & IDE Files
+# ==============================================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*~
+*.bak
+
+# ==============================================================================
+# Application Logs & Temporary Files
+# ==============================================================================
+*.log
+logs/
+tmp/
+scratch/
