@@ -20,6 +20,7 @@ Unlike legacy machine learning workflows that demand multi-gigabyte model weight
 1. **AI Email Drafting:** Generates formal, corporate English emails from brief user prompts using **NVIDIA AI Foundation Endpoints** (`google/diffusiongemma-26b-a4b-it` or `meta/llama-3.1-70b-instruct`) via LangChain with zero-dependency HTTP fallbacks.
 2. **Deterministic Translation:** Translates English text to natural Japanese using **Google Translate** via `deep-translator` (backed by a native `urllib` HTTP fallback), delivering sub-second latency and consuming **0 LLM API tokens**.
 3. **Bilingual Delivery:** Delivers a dual-language email with a responsive, styled HTML card layout (Japanese primary + English reference) and plain-text fallback via Python's built-in `smtplib` over TLS.
+4. **Interactive Streamlit Web UI:** Provides a reactive browser interface (`app.py`) featuring **reactive auto-translation** (instant synchronization of Japanese subject & body upon editing English) and an **enhanced dry-run mode** (side-by-side sender and recipient validation without sending real emails).
 
 ---
 
@@ -31,6 +32,8 @@ Unlike legacy machine learning workflows that demand multi-gigabyte model weight
 | ⚡ **Zero GPU & PyTorch Requirement** | No CUDA, PyTorch (`torch`), or TorchVision requirements. Runs seamlessly on standard laptops, university lab computers, and cloud containers. |
 | 🪶 **Ultra-Lightweight (<20 MB)** | The entire dependency tree installs in seconds and takes less than 20 MB of disk space (over **99.5% reduction** compared to >4.9 GB previously). |
 | ⚡ **Lightning-Fast Execution** | Sub-second translation latency (~200–400 ms) via Google Translate paired with rapid cloud LLM streaming. |
+| 🔄 **Reactive Auto-Translation** | Instant synchronization in the Streamlit UI: editing the English Subject Line (<kbd>Enter</kbd>) or English Email Draft (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>) automatically triggers Google Translate synchronization for Japanese fields while preserving manual Japanese adjustments. |
+| 🧪 **Enhanced Dry-Run Mode** | Validates both Sender Email Address and Recipient Email Address side-by-side with full RFC regex checks, previewing the complete bilingual email without sending real emails. |
 | 💰 **API Token & Quota Conservation** | LLM tokens are reserved solely for creative drafting; 100% of the translation workload is offloaded to Google Translate to preserve API quota. |
 | 🐍 **100% Python 3.14.2 Compatible** | Built with pure-Python packages and standard library fallbacks (`urllib.request`), completely avoiding missing C++ binary wheel issues on newer Python releases. |
 | 🛡️ **Graceful HTTP Fallbacks** | Both drafting and translation modules feature native Python standard library fallbacks that function even if third-party packages are absent. |
@@ -86,6 +89,7 @@ email translator/
 │   ├── translate.py          # Stage 2 — Translation (Google Translate / deep-translator)
 │   ├── email_sender.py       # Stage 3 — SMTP delivery (plain-text + dual-card HTML)
 │   └── main.py               # CLI Orchestrator & interactive runner
+├── app.py                    # Streamlit Web Application (Reactive UI, live preview & dry-run validation)
 ├── .env                      # 🔑 Environment secrets (API keys & SMTP credentials)
 ├── .env.example              # Template for environment configuration
 ├── requirements.txt          # Pure-Python dependencies (<20 MB)
@@ -223,7 +227,40 @@ RECIPIENT_EMAIL=recipient@example.com
 
 ## 🚀 Quickstart & Usage
 
-### 1. Run the Complete Pipeline via CLI Orchestrator
+### 1. Launch the Streamlit Web Application (Recommended)
+
+Launch the interactive, browser-based bilingual email dashboard:
+
+```bash
+streamlit run app.py
+```
+
+The Web UI provides a reactive, real-time environment with live visual feedback:
+
+#### ✨ Key Streamlit Features:
+- **Dual Composition Modes:**
+  - **Mode A (AI Compose & Translate):** Type a topic or click quick-preset chips (*Milestone Completed*, *Reschedule Meeting*, *Delivery Update*, *Partnership Proposal*) to generate a full formal business email via NVIDIA AI and translate it to Japanese.
+  - **Mode B (Direct Translate):** Directly type or paste existing English text or subject lines to translate immediately via Google Translate (bypassing LLM generation with 0 token cost).
+- **🔄 Reactive Auto-Translation Synchronization:**
+  - **Subject Line Reactive Sync:** Editing the **English Subject Line** and pressing <kbd>Enter</kbd> automatically triggers Google Translate synchronization for the **Japanese Subject Line (件名)**, applying corporate brackets (`【件名】...`).
+  - **Email Draft Reactive Sync:** Editing the **English Email Draft** and pressing <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (or clicking outside) automatically re-translates and synchronizes the **Japanese Email Body** in real time.
+  - **State-Preserving Manual Adjustments:** Direct manual edits made to Japanese fields (*Japanese Subject Line* or *Japanese Translation Body*) are strictly preserved. The system will not overwrite your custom Japanese phrasing unless the corresponding English text is subsequently edited.
+  - **On-Demand Re-translate:** A manual `🔄 Re-translate to Japanese` button is also provided for instant full-text re-synchronization.
+- **🧪 Enhanced Dry-Run Mode (End-to-End Self-Verification):**
+  - **Side-by-Side Address Verification:** Allows entering and validating both the **Sender Email Address** and **Recipient Email Address** side-by-side in balanced columns.
+  - **Strict RFC Format Validation:** Validates both email formats using RFC-compliant pattern checks before proceeding, flagging invalid syntax early.
+  - **Zero-Risk Safe Testing:** Simulates the entire dispatch lifecycle—assembles the resolved subject header, renders the responsive HTML dual-card email preview, and confirms validation status—**without sending real emails** over the network and without consuming Gmail SMTP quotas.
+- **👁️ Live Dual-Card HTML Email Preview:**
+  - Renders the exact email design seen by the recipient (Primary Rose card `#d63384` for Japanese + Reference Amber card `#856404` for English).
+- **📨 Flexible Subject Dispatch Selector:**
+  - Radio toggle to dispatch with:
+    1. **Bilingual:** `【Japanese Subject】 English Subject` (standard business protocol)
+    2. **Japanese Only:** `【Japanese Subject】`
+    3. **English Only:** `English Subject`
+
+---
+
+### 2. Run the Complete Pipeline via CLI Orchestrator
 
 Run the end-to-end translation pipeline with interactive preview or dry-run:
 
@@ -244,7 +281,7 @@ python email_trans/main.py
 
 ---
 
-### 2. Run Individual Modules Separately
+### 3. Run Individual Modules Separately
 
 Each stage is completely modular and can be tested independently:
 

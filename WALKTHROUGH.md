@@ -19,9 +19,14 @@
 6. [Module 3: `email_trans/email_sender.py` (SMTP Dispatcher & Responsive MIME Formatter)](#6-module-3-email_transemail_senderpy-smtp-dispatcher--responsive-mime-formatter)
 7. [Module 4: `email_trans/main.py` (Unified CLI Orchestrator)](#7-module-4-email_transmainpy-unified-cli-orchestrator)
    - [7.4 Japanese Subject Line Engineering: Extraction, Side-by-Side Presentation & Bilingual Dispatch](#74-japanese-subject-line-engineering-extraction-side-by-side-presentation--bilingual-dispatch)
-8. [End-to-End Pipeline Integration & Data Lifecycle](#8-end-to-end-pipeline-integration--data-lifecycle)
-9. [Sample Terminal Inputs & Dual-Language Email Outputs](#9-sample-terminal-inputs--dual-language-email-outputs)
-10. [Quick-Start & Verification Commands](#10-quick-start--verification-commands)
+8. [Module 5: `app.py` (Streamlit Web Application: Reactive Auto-Translation & Enhanced Dry-Run Mode)](#8-module-5-apppy-streamlit-web-application-reactive-auto-translation--enhanced-dry-run-mode)
+   - [8.1 Architecture & Workflow of the Web Dashboard](#81-architecture--workflow-of-the-web-dashboard)
+   - [8.2 Reactive Auto-Translation Synchronization](#82-reactive-auto-translation-synchronization)
+   - [8.3 Enhanced Dry-Run Mode (Side-by-Side Sender & Recipient Verification)](#83-enhanced-dry-run-mode-side-by-side-sender--recipient-verification)
+   - [8.4 Live Dual-Card HTML Email Preview & Dispatch Options](#84-live-dual-card-html-email-preview--dispatch-options)
+9. [End-to-End Pipeline Integration & Data Lifecycle](#9-end-to-end-pipeline-integration--data-lifecycle)
+10. [Sample Terminal & Web UI Interactions](#10-sample-terminal--web-ui-interactions)
+11. [Quick-Start & Verification Commands](#11-quick-start--verification-commands)
 
 ---
 
@@ -1263,9 +1268,187 @@ This provides:
 
 ---
 
-## 8. End-to-End Pipeline Integration & Data Lifecycle
+## 8. Module 5: `app.py` (Streamlit Web Application: Reactive Auto-Translation & Enhanced Dry-Run Mode)
 
-### 8.1 Data Lifecycle Matrix
+### 8.1 Architecture & Workflow of the Web Dashboard
+
+`app.py` implements an interactive, cloud-connected browser dashboard using **Streamlit**. Designed for desktop and mobile responsiveness, it coordinates the complete bilingual correspondence lifecycle across three structured stages:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   STREAMLIT WEB DASHBOARD (app.py)                      │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│ 1️⃣ INPUT & COMPOSITION                                                                  │
+│    ├─ Mode A (AI Compose): Topic Prompt / Quick Presets ──> NVIDIA DiffusionGemma 26B   │
+│    └─ Mode B (Direct Translate): Raw English Text / Subject ──> Google Translate         │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│ 2️⃣ REVIEW, EDIT & LIVE PREVIEW                                                          │
+│    ├─ English Subject [Enter] ────────(Reactive Sync)────────> Japanese Subject (件名)  │
+│    ├─ English Body [Ctrl+Enter] ──────(Reactive Sync)────────> Japanese Body (本文)     │
+│    ├─ Custom Japanese Edits ─────────────────────────────────> Strictly Preserved       │
+│    └─ Live Recipient HTML View ──────────────────────────────> Dual-Card Visual Preview │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│ 3️⃣ DISPATCH VIA SMTP & ENHANCED DRY-RUN                                                 │
+│    ├─ Subject Format Selector (Bilingual 【JA】 EN / Japanese Only / English Only)      │
+│    ├─ Enhanced Dry-Run: Sender & Recipient Email Side-by-Side Validation                │
+│    └─ Production Dispatch: Gmail SMTP:587 with STARTTLS Encryption                      │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Key Architecture Principles of `app.py`:
+1. **Multi-Modal Input Architecture:**
+   - **Mode A (AI Compose & Translate):** Allows business users to input a concise intent or select one of four preset chips (*Milestone Completed*, *Reschedule Meeting*, *Delivery Update*, *Partnership Proposal*). The backend queries NVIDIA AI Foundation Endpoints (`google/diffusiongemma-26b-a4b-it`) to construct an executive-level English email, isolates the subject header via `extract_subject_from_draft()`, and invokes Google Translate to synthesize the Japanese counterpart.
+   - **Mode B (Direct Translate):** Designed for users who already have drafted correspondence or require rapid on-the-fly translation (e.g., pasting pre-written meeting notes). It bypasses LLM inference entirely, translating both subject and body directly via Google Translate with **zero latency overhead and zero NVIDIA API token consumption**.
+2. **Session State Integrity (`st.session_state`):**
+   - Streamlit re-executes the script from top to bottom on each user interaction. To prevent state loss, all transient artifacts (`topic_input`, `english_draft`, `japanese_body`, `email_subject`, `japanese_subject`, `is_generated`, `generation_error`) are anchored in `st.session_state`.
+3. **Resilient Error Mitigation & GPU Queue Handling:**
+   - Cloud GPU endpoints can occasionally incur cold start delays (20–45s) or queue spikes during peak traffic. `app.py` catches socket timeouts gracefully, displaying an explanatory diagnostic badge, helpful guidance, and an automated one-click **🔄 Retry Generation** button to instantly connect to a warmed GPU instance.
+
+---
+
+### 8.2 Reactive Auto-Translation Synchronization
+
+In cross-cultural corporate communication, drafting often requires iterative refinement of English nuance. A common friction point in traditional translation tools is requiring the user to repeatedly click a manual "Translate" button every time they tweak a sentence or subject line.
+
+`app.py` eliminates this friction by implementing **reactive auto-translation synchronization** directly driven by Streamlit's event loop:
+
+#### 1. English Subject Line Synchronization (<kbd>Enter</kbd> Trigger)
+- **Mechanism:** The user enters or refines the text in the *📝 English Subject Line* text input field.
+- **Trigger:** Pressing <kbd>Enter</kbd> (or unfocusing the field) signals a reactive change event to the Streamlit execution loop.
+- **Synchronization Action:**
+  ```python
+  if edited_sub_en != st.session_state.get("last_translated_sub_en"):
+      with st.spinner("🌐 Auto-translating Subject Line to Japanese..."):
+          ja_sub_trans = translate_english_to_japanese(edited_sub_en)
+          st.session_state.japanese_subject = format_japanese_subject(ja_sub_trans)
+          st.session_state.last_translated_sub_en = edited_sub_en
+          st.session_state.email_subject = edited_sub_en
+      st.rerun()
+  else:
+      st.session_state.email_subject = edited_sub_en
+  ```
+- **Linguistic Formatting:** The newly translated Japanese subject is automatically formatted with canonical Japanese corporate brackets (`【件名】...` or `【対応完了】...`), instantly updating the adjacent *🌸 Japanese Subject Line (件名)* input field.
+
+#### 2. English Email Draft Synchronization (<kbd>Ctrl</kbd>+<kbd>Enter</kbd> Trigger)
+- **Mechanism:** The user edits the email body within the multi-line *📝 English Email Draft* text area.
+- **Trigger:** In Streamlit, multiline text areas commit modifications upon pressing <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (or when the editor loses focus/clicks outside).
+- **Synchronization Action:**
+  ```python
+  if edited_en != st.session_state.get("last_translated_body_en"):
+      with st.spinner("🌐 Auto-translating Email Draft to Japanese..."):
+          ja_body_trans = translate_english_to_japanese(edited_en)
+          st.session_state.japanese_body = ja_body_trans
+          st.session_state.last_translated_body_en = edited_en
+          st.session_state.english_draft = edited_en
+      st.rerun()
+  else:
+      st.session_state.english_draft = edited_en
+  ```
+- **Real-Time Responsiveness:** Because translation runs via Google Translate's neural MT endpoint (backed by `deep-translator` and native `urllib`), synchronization completes in **200–400 milliseconds**, providing an instantaneous live-sync experience.
+
+#### 3. State Preservation of Manual Japanese Refinements
+- **Cultural Requirement:** Japanese corporate etiquette (*Keigo* / 敬語) often involves company-specific honorifics, customized greetings (*Heisha* / 弊社, *Kisha* / 貴社), or recipient-specific titles (*Katagaki* / 肩書). Senders must have the freedom to hand-craft or polish the Japanese text directly.
+- **Preservation Logic:**
+  - The system isolates changes made directly to *🌸 Japanese Subject Line* or *🌸 Japanese Translation Body*.
+  - Manual edits made to the Japanese fields remain active in `st.session_state` and are **strictly preserved** across UI interactions and rerun cycles.
+  - Auto-translation is triggered **only when the English source text is actively modified**. Editing other interface elements (such as subject dispatch formats or delivery settings) will never overwrite manually polished Japanese prose.
+
+#### 4. Absolute API Token Budget Conservation
+- Standard LLM-based translation re-incurs prompt and completion token costs on every edit.
+- Under this reactive architecture, every English subject modification and body edit is translated solely through Google Translate, consuming **0 tokens from the NVIDIA AI Foundation API quota**.
+
+---
+
+### 8.3 Enhanced Dry-Run Mode (Side-by-Side Sender & Recipient Verification)
+
+Before dispatching sensitive business communications across corporate firewalls, senders require absolute verification of:
+1. Valid sender authentication identity.
+2. Correct recipient addressing.
+3. Formatted bilingual subject header alignment.
+4. Accurate HTML dual-card visual rendering.
+
+To provide comprehensive self-verification without risking unintended emails or consuming SMTP resources, `app.py` features an **Enhanced Dry-Run Mode**:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                              ENHANCED DRY-RUN VERIFICATION                             │
+├──────────────────────────────────────────────────┬─────────────────────────────────────┤
+│ 📤 Sender Email Address                          │ 📥 Recipient Email Address          │
+│ [ sender.engineer@gmail.com                    ] │ [ client.executive@company.jp      ] │
+│ 🟢 Status: Valid RFC Format                      │ 🟢 Status: Valid RFC Format         │
+├──────────────────────────────────────────────────┴─────────────────────────────────────┤
+│ 🧪 [Dry-Run Checkbox: ENABLED]                                                         │
+│                                                                                        │
+│ 🔘 [🚀 Send Email Now / Run Test]                                                      │
+│                                                                                        │
+│ ℹ️ [Dry-Run Mode] Validation passed!                                                   │
+│    • Sender:    'sender.engineer@gmail.com' (Format verified)                          │
+│    • Recipient: 'client.executive@company.jp' (Format verified)                        │
+│    • Subject:   '【対応完了】 Project Milestone 1 Completion Notification'              │
+│    • Status:    Simulation succeeded. No real network email dispatched.                │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Technical Features of Enhanced Dry-Run Mode:
+1. **Side-by-Side Email Address Verification:**
+   - Instead of hiding the sender in the sidebar, the delivery stage displays **Sender Email Address** and **Recipient Email Address** side-by-side in balanced columns.
+   - Both inputs are validated in real time against strict RFC regex criteria:
+     $$\text{Pattern} = \texttt{\textasciicircum[a-zA-Z0-9\_.+-]+@[a-zA-Z0-9-]+\textbackslash.[a-zA-Z0-9-.]+\$}$$
+   - Any typographical mistake (such as missing `@`, omitted top-level domains, or illegal characters) triggers explicit localized warning banners before submission.
+2. **End-to-End Self-Verification Without Real Email Dispatch:**
+   - Enabling the `🧪 Test Run (Dry-run without sending)` checkbox activates non-destructive simulation mode.
+   - When the user clicks **🚀 Send Email Now**:
+     ```python
+     if dry_run_check:
+         sender_clean = sender_to_verify.strip()
+         recipient_clean = recipient_to.strip()
+
+         if not sender_clean:
+             st.error("❌ Sender email address cannot be empty.")
+         elif not is_valid_email(sender_clean):
+             st.error(f"❌ '{sender_clean}' is not a valid email address.")
+         elif not recipient_clean:
+             st.error("❌ Recipient email address cannot be empty.")
+         elif not is_valid_email(recipient_clean):
+             st.error(f"❌ '{recipient_clean}' is not a valid email address.")
+         else:
+             with st.container(border=True):
+                 st.success("🎉 **Dry-Run Completed Successfully!** All verification checks passed.")
+                 st.markdown(f"- ✅ **Sender Address Verified:** `{sender_clean}`")
+                 st.markdown(f"- ✅ **Recipient Address Verified:** `{recipient_clean}`")
+                 st.markdown(f"- ✅ **Dispatched Subject Line:** `{final_dispatch_subject}`")
+                 st.markdown("- ✅ **MIME Payload & HTML Dual Cards confirmed ready without real SMTP transmission.**")
+                 st.caption("🔒 *Test mode active: No credentials dispatched across SMTP and no network packets sent to Gmail.*")
+     ```
+   - **Simulation Guarantees:**
+     - Both addresses are validated and confirmed.
+     - The canonical subject line is constructed using the selected dispatch rule (Bilingual, Japanese Only, or English Only).
+     - The live HTML dual-card container updates with the exact recipient styling.
+     - The SMTP network socket connection to `smtp.gmail.com:587` is **intentionally bypassed**.
+3. **Safe Academic Demonstration & CI/CD Testing:**
+   - Allows students, evaluators, and engineers to demonstrate the full end-to-end software pipeline during project evaluations, defenses, and automated UI test suites without sending spam emails to real external inboxes or needing live Gmail App Passwords.
+
+---
+
+### 8.4 Live Dual-Card HTML Email Preview & Dispatch Options
+
+#### 1. True Recipient-View Visual Sandbox
+The web application includes an expandable visual sandbox (`st.html`) matching the exact CSS and typography rendered in Gmail, Outlook, and Apple Mail:
+- **Primary Japanese Card:** Framed with a 5px Rose border (`#d63384`) on soft light grey (`#f8f9fa`) with bold `件名:` header callout.
+- **Reference English Card:** Framed with a 5px Dark Amber border (`#856404`) on warm amber (`#fff3cd`) with `Subject:` header callout.
+- **Compliance Footer:** Minimalist bilingual attribution confirming automated AI composition and translation.
+
+#### 2. Configurable Subject Line Dispatch Formatting
+A dedicated radio control allows senders to select how the RFC 5322 `Subject:` header is formatted upon delivery:
+- **🌐 Bilingual (Standard Protocol):** `【Japanese Subject】 English Subject` (e.g., `【日程変更のお願い】 Meeting Reschedule Request`).
+- **🇯🇵 Japanese Only:** `【Japanese Subject】` (e.g., `【日程変更のお願い】`).
+- **🇬🇧 English Only:** `English Subject` (e.g., `Meeting Reschedule Request`).
+
+---
+
+## 9. End-to-End Pipeline Integration & Data Lifecycle
+
+### 9.1 Data Lifecycle Matrix
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
@@ -1292,7 +1475,7 @@ This provides:
    - MIME body: Primary Rose Card (Japanese) + Reference Amber Card (English) + ASCII plain-text fallback.
 5. **Final State:** Transmitted via TLS (Port 587) to recipient's inbox.
 
-### 8.2 Calling from Python Code
+### 9.2 Calling from Python Code
 
 The package also exposes a clean, programmatic Python API via `email_trans/__init__.py`:
 
@@ -1325,9 +1508,9 @@ print(result)
 
 ---
 
-## 9. Sample Terminal Inputs & Dual-Language Email Outputs
+## 10. Sample Terminal & Web UI Interactions
 
-### 9.1 Scenario 1: Dry-Run Mode (Draft & Translate Preview)
+### 10.1 Scenario 1: CLI Dry-Run Mode (Draft & Translate Preview)
 
 #### Command
 ```bash
@@ -1369,7 +1552,6 @@ Project Team
 
 合意された仕様とスケジュールに従い、プロジェクトが無事に完了しましたことをお知らせいたします。
 すべての成果物は完成しており、正式なレビューを受けていただけます。
-
 ご不明な点や修正のご要望がございましたら、いつでもお申し付けください。
 
 敬具
@@ -1381,7 +1563,7 @@ Project Team
 
 ---
 
-### 9.2 Scenario 2: Automated Dispatch Mode (`--yes`)
+### 10.2 Scenario 2: Automated Dispatch Mode (`--yes`)
 
 #### Command
 ```bash
@@ -1436,7 +1618,40 @@ Operations Management
 
 ---
 
-### 9.3 Email Client Visual Rendering
+### 10.3 Scenario 3: Streamlit Web UI Interactive Auto-Translation & Dry-Run Self-Verification
+
+#### Workflow Walkthrough:
+1. **Launch the Dashboard:**
+   ```bash
+   streamlit run app.py
+   ```
+2. **Step 1: Input & AI Generation:**
+   - The user selects **Mode A: AI Compose & Translate** and clicks the preset chip **🚀 Milestone Completed**.
+   - The prompt `"Informing client that Project Milestone 1 has been completed on schedule with deliverables attached."` populates the topic input area.
+   - Clicking **✨ Generate Formal Email & Translate** connects to NVIDIA AI Foundation Endpoints (`google/diffusiongemma-26b-a4b-it`) and Google Translate.
+3. **Step 2: Reactive Auto-Translation Synchronization:**
+   - **Editing Subject Line:**
+     - The user edits the English subject in *📝 English Subject Line* to: `Project Milestone 1 Final Deliverables Handover` and presses <kbd>Enter</kbd>.
+     - The app immediately triggers background Google Translate synchronization without full pipeline re-run, automatically populating *🌸 Japanese Subject Line (件名)* as: `【件名】プロジェクトのマイルストーン 1 最終成果物の引き渡し`.
+   - **Editing Email Draft:**
+     - The user types additional bullet points in *📝 English Email Draft* and presses <kbd>Ctrl</kbd>+<kbd>Enter</kbd>.
+     - The *🌸 Japanese Translation (日本語)* body updates in real time (~250ms) via Google Translate synchronization.
+   - **Preserving Custom Japanese Nuance:**
+     - The user edits the Japanese salutation to add a specific company name: `株式会社ABC 御中`.
+     - Because manual edits to Japanese fields are state-isolated, this custom text remains strictly preserved throughout subsequent operations.
+4. **Step 3: Enhanced Dry-Run Mode Self-Verification:**
+   - The user inputs `sender.engineer@gmail.com` into **Sender Email Address** and `client.lead@tokyo-partner.jp` into **Recipient Email Address**.
+   - Both addresses pass real-time RFC format validation.
+   - The user selects **🌐 Bilingual: 【Japanese Subject】 English Subject** as the dispatch format.
+   - Enabling `🧪 Test Run (Dry-run without sending)` and clicking **🚀 Send Email Now**:
+     - Resolves the bilingual subject: `【件名】プロジェクトのマイルストーン 1 最終成果物の引き渡し Project Milestone 1 Final Deliverables Handover`.
+     - Validates both email formats side-by-side.
+     - Confirms: `🧪 [Dry-Run Mode] Validation passed! Subject: '...'. No real email was dispatched.`
+     - Bypasses the SMTP socket connection entirely, consuming zero Gmail SMTP quotas and avoiding accidental test messages.
+
+---
+
+### 10.4 Email Client Visual Rendering
 
 When opened in an email client (Gmail, Outlook, Apple Mail), the recipient sees a structured, responsive dual-card layout:
 
@@ -1483,9 +1698,9 @@ When opened in an email client (Gmail, Outlook, Apple Mail), the recipient sees 
 
 ---
 
-## 10. Quick-Start & Verification Commands
+## 11. Quick-Start & Verification Commands
 
-### 10.1 Environment Setup
+### 11.1 Environment Setup
 
 1. **Configure Environment Variables** in `.env`:
    ```env
@@ -1500,9 +1715,12 @@ When opened in an email client (Gmail, Outlook, Apple Mail), the recipient sees 
    ```
    *(Optional LangChain modules: `pip install langchain-core langchain-nvidia-ai-endpoints`)*
 
-### 10.2 Component Verification Commands
+### 11.2 Component Verification Commands
 
 ```bash
+# Launch interactive Streamlit web dashboard (Reactive UI & Dry-Run verification):
+streamlit run app.py
+
 # Verify Email Dispatcher template rendering and UTF-8 console output:
 python email_trans/email_sender.py
 

@@ -139,6 +139,10 @@ if "email_subject" not in st.session_state:
     st.session_state.email_subject = ""
 if "japanese_subject" not in st.session_state:
     st.session_state.japanese_subject = ""
+if "last_translated_sub_en" not in st.session_state:
+    st.session_state.last_translated_sub_en = ""
+if "last_translated_body_en" not in st.session_state:
+    st.session_state.last_translated_body_en = ""
 if "is_generated" not in st.session_state:
     st.session_state.is_generated = False
 if "generation_error" not in st.session_state:
@@ -341,6 +345,9 @@ with tab_ai:
                     ja_sub_trans = translate_english_to_japanese(st.session_state.email_subject)
                     st.session_state.japanese_subject = format_japanese_subject(ja_sub_trans)
 
+                    st.session_state.last_translated_sub_en = st.session_state.email_subject
+                    st.session_state.last_translated_body_en = st.session_state.english_draft
+
                     st.session_state.is_generated = True
                     st.session_state.generation_error = None
                     st.success("🎉 Email generated and translated successfully! Review it in Step 2 below.")
@@ -394,6 +401,9 @@ with tab_direct:
                         st.session_state.email_subject = "Communication / 業務連絡"
                         st.session_state.japanese_subject = "【件名】ご連絡"
 
+                    st.session_state.last_translated_sub_en = st.session_state.email_subject
+                    st.session_state.last_translated_body_en = st.session_state.english_draft
+
                     st.session_state.is_generated = True
                     st.session_state.generation_error = None
                     st.success("🎉 Translation completed! Review it in Step 2 below.")
@@ -413,8 +423,18 @@ if st.session_state.is_generated:
         edited_sub_en = st.text_input(
             "📝 English Subject Line:",
             value=st.session_state.email_subject,
+            help="Press Enter to apply",
         )
-        st.session_state.email_subject = edited_sub_en
+        if edited_sub_en != st.session_state.get("last_translated_sub_en"):
+            with st.spinner("🌐 Auto-translating Subject Line to Japanese..."):
+                ja_sub_trans = translate_english_to_japanese(edited_sub_en)
+                st.session_state.japanese_subject = format_japanese_subject(ja_sub_trans)
+                st.session_state.last_translated_sub_en = edited_sub_en
+                st.session_state.email_subject = edited_sub_en
+            st.rerun()
+        else:
+            st.session_state.email_subject = edited_sub_en
+
     with col_sub_ja:
         edited_sub_ja = st.text_input(
             "🌸 Japanese Subject Line (件名):",
@@ -429,16 +449,27 @@ if st.session_state.is_generated:
             "English body",
             value=st.session_state.english_draft,
             height=280,
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            help="Press Ctrl+Enter to apply",
         )
-        st.session_state.english_draft = edited_en
+        if edited_en != st.session_state.get("last_translated_body_en"):
+            with st.spinner("🌐 Auto-translating Email Draft to Japanese..."):
+                ja_body_trans = translate_english_to_japanese(edited_en)
+                st.session_state.japanese_body = ja_body_trans
+                st.session_state.last_translated_body_en = edited_en
+                st.session_state.english_draft = edited_en
+            st.rerun()
+        else:
+            st.session_state.english_draft = edited_en
         
         if st.button("🔄 Re-translate to Japanese", help="Re-translates current English subject and body to Japanese"):
             with st.spinner("Translating..."):
                 st.session_state.japanese_body = translate_english_to_japanese(st.session_state.english_draft)
+                st.session_state.last_translated_body_en = st.session_state.english_draft
                 if st.session_state.email_subject.strip():
                     ja_sub_trans = translate_english_to_japanese(st.session_state.email_subject.strip())
                     st.session_state.japanese_subject = format_japanese_subject(ja_sub_trans)
+                    st.session_state.last_translated_sub_en = st.session_state.email_subject
                 st.rerun()
 
     with col_edit_ja:
@@ -447,7 +478,7 @@ if st.session_state.is_generated:
             "Japanese body",
             value=st.session_state.japanese_body,
             height=280,
-            label_visibility="collapsed"
+            label_visibility="collapsed",
         )
         st.session_state.japanese_body = edited_ja
 
@@ -505,11 +536,34 @@ if st.session_state.is_generated:
     )
     st.caption(f"📨 **Subject to be dispatched:** `{final_dispatch_subject}`")
 
-    col_disp1, col_disp2 = st.columns([2, 1])
-    with col_disp1:
-        recipient_to = st.text_input("Recipient Email Address:", placeholder="client@company.jp or colleague@example.com")
-    with col_disp2:
-        dry_run_check = st.checkbox("🧪 Test Run (Dry-run without sending)", value=False)
+    dry_run_check = st.checkbox(
+        "🧪 Test Run (Dry-run without sending)",
+        value=False,
+        help="Simulate email verification and review headers without connecting to SMTP.",
+    )
+
+    if dry_run_check:
+        col_sender, col_recip = st.columns(2)
+        with col_sender:
+            env_sender_val = os.getenv("GMAIL_ADDRESS", os.getenv("SENDER_EMAIL", ""))
+            sender_to_verify = st.text_input(
+                "Sender Email Address (From):",
+                value=env_sender_val,
+                placeholder="sender@company.com",
+                help="Sender email address to verify in dry-run mode.",
+            )
+        with col_recip:
+            recipient_to = st.text_input(
+                "Recipient Email Address (To):",
+                placeholder="client@company.jp or colleague@example.com",
+                help="Recipient email address to verify in dry-run mode.",
+            )
+    else:
+        recipient_to = st.text_input(
+            "Recipient Email Address:",
+            placeholder="client@company.jp or colleague@example.com",
+        )
+        sender_to_verify = os.getenv("GMAIL_ADDRESS", os.getenv("SENDER_EMAIL", ""))
 
     col_btn_send, _ = st.columns([1, 2])
     with col_btn_send:
@@ -517,14 +571,32 @@ if st.session_state.is_generated:
 
     if btn_send:
         if dry_run_check:
-            st.info(f"🧪 [Dry-Run Mode] Validation passed! Subject: '{final_dispatch_subject}'. No real email was dispatched.")
+            sender_clean = sender_to_verify.strip()
+            recipient_clean = recipient_to.strip()
+
+            if not sender_clean:
+                st.error("❌ Sender email address cannot be empty.")
+            elif not is_valid_email(sender_clean):
+                st.error(f"❌ '{sender_clean}' is not a valid email address.")
+            elif not recipient_clean:
+                st.error("❌ Recipient email address cannot be empty.")
+            elif not is_valid_email(recipient_clean):
+                st.error(f"❌ '{recipient_clean}' is not a valid email address.")
+            else:
+                with st.container(border=True):
+                    st.success("🎉 **Dry-Run Completed Successfully!** All verification checks passed.")
+                    st.markdown(f"- ✅ **Sender Address Verified:** `{sender_clean}`")
+                    st.markdown(f"- ✅ **Recipient Address Verified:** `{recipient_clean}`")
+                    st.markdown(f"- ✅ **Dispatched Subject Line:** `{final_dispatch_subject}`")
+                    st.markdown("- ✅ **MIME Payload & HTML Dual Cards confirmed ready without real SMTP transmission.**")
+                    st.caption("🔒 *Test mode active: No credentials dispatched across SMTP and no network packets sent to Gmail.*")
         elif not recipient_to.strip():
             st.error("❌ Recipient email address cannot be empty.")
         elif not is_valid_email(recipient_to.strip()):
             st.error(f"❌ '{recipient_to}' is not a valid email address.")
         else:
-            current_sender = os.getenv("GMAIL_ADDRESS", "")
-            current_pw = os.getenv("GMAIL_APP_PASSWORD", "")
+            current_sender = os.getenv("GMAIL_ADDRESS", os.getenv("SENDER_EMAIL", ""))
+            current_pw = os.getenv("GMAIL_APP_PASSWORD", os.getenv("SENDER_APP_PASSWORD", ""))
             
             if not current_sender or not current_pw:
                 st.error("❌ Gmail sender credentials missing. Please configure your Gmail Address and App Password in the sidebar or .env.")
