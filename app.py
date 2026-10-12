@@ -18,6 +18,19 @@ if _current_dir not in sys.path:
 
 load_dotenv()
 
+import importlib
+import email_trans.email_sender
+import email_trans.test_dispatcher
+import email_trans.write_email
+import email_trans.translate
+import email_trans.main
+
+importlib.reload(email_trans.email_sender)
+importlib.reload(email_trans.test_dispatcher)
+importlib.reload(email_trans.write_email)
+importlib.reload(email_trans.translate)
+importlib.reload(email_trans.main)
+
 from email_trans.write_email import generate_email
 from email_trans.translate import translate_english_to_japanese
 from email_trans.email_sender import send_email, is_valid_email
@@ -56,7 +69,7 @@ def resolve_dispatch_subject(format_choice: str, en_subject: str, ja_subject: st
             return ja_sub
         elif en_sub:
             return en_sub
-        return "Bilingual Communication / 業務連絡"
+        return "【件名】ご連絡 Business Communication"
     elif "Japanese Only" in format_choice:
         return ja_sub or en_sub or "【件名】ご連絡"
     elif "English Only" in format_choice:
@@ -127,12 +140,14 @@ st.markdown("""
 # ------------------------------------------------------------------------------
 # Session State Initialization
 # ------------------------------------------------------------------------------
+if "topic_area" not in st.session_state:
+    st.session_state.topic_area = ""
 if "topic_input" not in st.session_state:
     st.session_state.topic_input = ""
-if "direct_text_input" not in st.session_state:
-    st.session_state.direct_text_input = ""
-if "direct_subject_input" not in st.session_state:
-    st.session_state.direct_subject_input = ""
+if "direct_sub_area" not in st.session_state:
+    st.session_state.direct_sub_area = ""
+if "direct_area" not in st.session_state:
+    st.session_state.direct_area = ""
 if "english_draft" not in st.session_state:
     st.session_state.english_draft = ""
 if "japanese_body" not in st.session_state:
@@ -269,7 +284,6 @@ with tab_ai:
 
     topic_text = st.text_area(
         "Enter email topic, intent, or bullet points:",
-        value=st.session_state.topic_input,
         placeholder="e.g. Informing client that the software integration phase is completed and ready for testing...",
         height=90,
         key="topic_area",
@@ -327,6 +341,10 @@ with tab_ai:
                 try:
                     raw_draft = generate_email(target_topic)
                     inferred_sub, cleaned_body = extract_subject_from_draft(raw_draft)
+                    if inferred_sub == "Business Communication" and target_topic.strip():
+                        first_line_topic = target_topic.strip().splitlines()[0][:50].strip()
+                        if first_line_topic:
+                            inferred_sub = f"Project Update: {first_line_topic}" if not first_line_topic.lower().startswith("project") else first_line_topic
                     st.session_state.email_subject = inferred_sub
                     st.session_state.english_draft = cleaned_body
                 except Exception as e:
@@ -363,21 +381,17 @@ with tab_direct:
     
     direct_sub_input = st.text_input(
         "Optional Subject Line (English):",
-        value=st.session_state.direct_subject_input,
         placeholder="e.g. Project Status Update or Milestone Review",
         key="direct_sub_area",
         help="Optional: Enter a subject line to translate directly alongside the body."
     )
-    st.session_state.direct_subject_input = direct_sub_input
 
     direct_input = st.text_area(
         "Enter English text or email body to translate:",
-        value=st.session_state.direct_text_input,
         placeholder="e.g. Hello, we are pleased to inform you that our project is ready for review.",
         height=110,
         key="direct_area",
     )
-    st.session_state.direct_text_input = direct_input
 
     btn_direct_trans = st.button("🌐 Translate Directly to Japanese", type="primary", use_container_width=True, key="btn_direct")
 
@@ -400,7 +414,7 @@ with tab_direct:
                         st.session_state.email_subject = direct_sub_input.strip()
                         st.session_state.japanese_subject = format_japanese_subject(ja_sub_trans)
                     else:
-                        st.session_state.email_subject = "Communication / 業務連絡"
+                        st.session_state.email_subject = "Business Communication"
                         st.session_state.japanese_subject = "【件名】ご連絡"
 
                     st.session_state.last_translated_sub_en = st.session_state.email_subject
@@ -475,7 +489,7 @@ if st.session_state.is_generated:
                 st.rerun()
 
     with col_edit_ja:
-        st.markdown("**🌸 Japanese Translation (日本語)** *(Editable)*")
+        st.markdown("**🌸 Japanese Translation (日本語)** *(編集可能)*")
         edited_ja = st.text_area(
             "Japanese body",
             value=st.session_state.japanese_body,
@@ -591,7 +605,13 @@ if st.session_state.is_generated:
                             st.error(f"❌ {result.get('message')}")
 
     elif "🧪 Manual Dry-run with sending" in dispatch_mode:
-        st.info("💡 **Provider-Free Test Dispatch:** The sender email is not restricted to Gmail! Enter any sender domain (e.g., `alice@company.com`, `user@outlook.com`, `team@corp.io`). Zero Gmail App Passwords required.")
+        st.info(
+            "💡 **Sandbox Test Relay (Ethereal SMTP):** Zero Gmail App Passwords or credentials required! "
+            "Enter any sender and recipient email addresses to verify real SMTP STARTTLS handshake and MIME multipart rendering.\n\n"
+            "⚠️ **Important:** Because this is a safe test relay, **emails are NOT delivered to public external inboxes** (e.g., real Gmail, Outlook, or external temp-mail sites). "
+            "Instead, the test relay captures the message and provides a **live Web Viewer link** below. "
+            "To send an email to a real recipient inbox, select **🚀 Live Production Dispatch** above."
+        )
         col_sender, col_recip = st.columns(2)
         with col_sender:
             env_sender_val = os.getenv("GMAIL_ADDRESS", os.getenv("SENDER_EMAIL", ""))
@@ -638,7 +658,7 @@ if st.session_state.is_generated:
                 if result.get("success"):
                     st.balloons()
                     with st.container(border=True):
-                        st.success("🎉 **Manual Test Email Delivered Successfully!**")
+                        st.success("🎉 **Manual Test Email Delivered to Sandbox Relay!**")
                         st.markdown(f"- 📤 **Sender Email Address (From):** `{result.get('sender', sender_clean)}` *(Provider-Free / Non-Gmail)*")
                         st.markdown(f"- 📥 **Recipient Email Address (To):** `{result.get('recipient', recipient_clean)}`")
                         st.markdown(f"- 📨 **Dispatched Subject Line:** `{result.get('subject', final_dispatch_subject)}`")
@@ -648,6 +668,7 @@ if st.session_state.is_generated:
                         preview_url = result.get("preview_url")
                         if preview_url:
                             st.markdown("---")
+                            st.info("📬 **Why isn't this in your external inbox?** This test mode uses an isolated SMTP sandbox (`smtp.ethereal.email`) designed to safely test email generation without spamming or needing email credentials. Emails are held securely in the sandbox web viewer rather than reaching public email servers. Click below to inspect your email:")
                             st.link_button("🌐 View Delivered Email in Web Viewer", url=preview_url, type="primary")
                             st.caption(f"Direct link: [{preview_url}]({preview_url})")
                 else:
