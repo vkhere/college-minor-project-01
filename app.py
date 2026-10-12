@@ -6,6 +6,7 @@ Compatible with Python 3.10 - 3.14.2.
 
 import os
 import sys
+import time
 import html
 import streamlit as st
 from dotenv import load_dotenv
@@ -20,6 +21,7 @@ load_dotenv()
 from email_trans.write_email import generate_email
 from email_trans.translate import translate_english_to_japanese
 from email_trans.email_sender import send_email, is_valid_email
+from email_trans.test_dispatcher import send_automatic_test_run, send_manual_test_run
 from email_trans.main import extract_subject_from_draft
 
 
@@ -536,43 +538,83 @@ if st.session_state.is_generated:
     )
     st.caption(f"📨 **Subject to be dispatched:** `{final_dispatch_subject}`")
 
-    dry_run_check = st.checkbox(
-        "🧪 Test Run (Dry-run without sending)",
-        value=False,
-        help="Simulate email verification and review headers without connecting to SMTP.",
+    dispatch_mode = st.radio(
+        "Select Dispatch Mode:",
+        options=[
+            "🚀 Live Production Dispatch (Send to Real Recipient via Gmail SMTP)",
+            "🧪 Manual Dry-run with sending (Any Mail Provider: Custom Sender & Recipient)",
+            "⚡ Automatic Dry-run with sending (100% Automated: 2 Temp Inboxes)",
+        ],
+        index=0,
+        help="Select the dispatch mode: Live production dispatch via Gmail SMTP, Manual test with arbitrary sender/recipient addresses, or 100% Automated test using 2 disposable inboxes.",
     )
 
-    if dry_run_check:
-        col_sender, col_recip = st.columns(2)
-        with col_sender:
-            env_sender_val = os.getenv("GMAIL_ADDRESS", os.getenv("SENDER_EMAIL", ""))
-            sender_to_verify = st.text_input(
-                "Sender Email Address (From):",
-                value=env_sender_val,
-                placeholder="sender@company.com",
-                help="Sender email address to verify in dry-run mode.",
-            )
-        with col_recip:
-            recipient_to = st.text_input(
-                "Recipient Email Address (To):",
-                placeholder="client@company.jp or colleague@example.com",
-                help="Recipient email address to verify in dry-run mode.",
-            )
-    else:
+    if "🚀 Live Production Dispatch" in dispatch_mode:
         recipient_to = st.text_input(
             "Recipient Email Address:",
             placeholder="client@company.jp or colleague@example.com",
+            help="Destination email address for live delivery via Gmail SMTP.",
         )
-        sender_to_verify = os.getenv("GMAIL_ADDRESS", os.getenv("SENDER_EMAIL", ""))
 
-    col_btn_send, _ = st.columns([1, 2])
-    with col_btn_send:
-        btn_send = st.button("🚀 Send Email Now", type="primary", use_container_width=True)
+        col_btn_send, _ = st.columns([1, 2])
+        with col_btn_send:
+            btn_send = st.button("🚀 Send Email Now", type="primary", use_container_width=True)
 
-    if btn_send:
-        if dry_run_check:
-            sender_clean = sender_to_verify.strip()
+        if btn_send:
             recipient_clean = recipient_to.strip()
+            if not recipient_clean:
+                st.error("❌ Recipient email address cannot be empty.")
+            elif not is_valid_email(recipient_clean):
+                st.error(f"❌ '{recipient_clean}' is not a valid email address.")
+            else:
+                current_sender = os.getenv("GMAIL_ADDRESS", os.getenv("SENDER_EMAIL", ""))
+                current_pw = os.getenv("GMAIL_APP_PASSWORD", os.getenv("SENDER_APP_PASSWORD", ""))
+                
+                if not current_sender or not current_pw:
+                    st.error("❌ Gmail sender credentials missing. Please configure your Gmail Address and App Password in the sidebar or .env.")
+                else:
+                    with st.spinner(f"📨 Connecting to smtp.gmail.com:587 via STARTTLS and dispatching to {recipient_clean}..."):
+                        result = send_email(
+                            sender_email=current_sender,
+                            sender_password=current_pw,
+                            recipient_email=recipient_clean,
+                            subject=final_dispatch_subject,
+                            japanese_body=st.session_state.japanese_body,
+                            english_body=st.session_state.english_draft,
+                            japanese_subject=st.session_state.japanese_subject,
+                        )
+                        
+                        if result.get("success"):
+                            st.balloons()
+                            st.success(f"✅ {result.get('message')}")
+                        else:
+                            st.error(f"❌ {result.get('message')}")
+
+    elif "🧪 Manual Dry-run with sending" in dispatch_mode:
+        st.info("💡 **Provider-Free Test Dispatch:** The sender email is not restricted to Gmail! Enter any sender domain (e.g., `alice@company.com`, `user@outlook.com`, `team@corp.io`). Zero Gmail App Passwords required.")
+        col_sender, col_recip = st.columns(2)
+        with col_sender:
+            env_sender_val = os.getenv("GMAIL_ADDRESS", os.getenv("SENDER_EMAIL", ""))
+            sender_manual = st.text_input(
+                "Sender Email Address (From):",
+                value=env_sender_val or "alice@company.com",
+                placeholder="alice@company.com or user@outlook.com",
+                help="Provider-independent sender address. Does NOT need to be Gmail!",
+            )
+        with col_recip:
+            recipient_manual = st.text_input(
+                "Recipient Email Address (To):",
+                placeholder="client@company.jp or colleague@example.com",
+                help="Recipient email address to receive the test email.",
+            )
+
+        col_btn_manual, _ = st.columns([1, 2])
+        with col_btn_manual:
+            btn_manual = st.button("🧪 Send Manual Test Email", type="primary", use_container_width=True)
+
+        if btn_manual:
+            sender_clean = sender_manual.strip()
+            recipient_clean = recipient_manual.strip()
 
             if not sender_clean:
                 st.error("❌ Sender email address cannot be empty.")
@@ -583,36 +625,73 @@ if st.session_state.is_generated:
             elif not is_valid_email(recipient_clean):
                 st.error(f"❌ '{recipient_clean}' is not a valid email address.")
             else:
-                with st.container(border=True):
-                    st.success("🎉 **Dry-Run Completed Successfully!** All verification checks passed.")
-                    st.markdown(f"- ✅ **Sender Address Verified:** `{sender_clean}`")
-                    st.markdown(f"- ✅ **Recipient Address Verified:** `{recipient_clean}`")
-                    st.markdown(f"- ✅ **Dispatched Subject Line:** `{final_dispatch_subject}`")
-                    st.markdown("- ✅ **MIME Payload & HTML Dual Cards confirmed ready without real SMTP transmission.**")
-                    st.caption("🔒 *Test mode active: No credentials dispatched across SMTP and no network packets sent to Gmail.*")
-        elif not recipient_to.strip():
-            st.error("❌ Recipient email address cannot be empty.")
-        elif not is_valid_email(recipient_to.strip()):
-            st.error(f"❌ '{recipient_to}' is not a valid email address.")
-        else:
-            current_sender = os.getenv("GMAIL_ADDRESS", os.getenv("SENDER_EMAIL", ""))
-            current_pw = os.getenv("GMAIL_APP_PASSWORD", os.getenv("SENDER_APP_PASSWORD", ""))
-            
-            if not current_sender or not current_pw:
-                st.error("❌ Gmail sender credentials missing. Please configure your Gmail Address and App Password in the sidebar or .env.")
-            else:
-                with st.spinner(f"📨 Connecting to smtp.gmail.com:587 via STARTTLS and dispatching to {recipient_to}..."):
-                    result = send_email(
-                        sender_email=current_sender,
-                        sender_password=current_pw,
-                        recipient_email=recipient_to.strip(),
-                        subject=final_dispatch_subject,
+                with st.spinner(f"🧪 Dispatching manual test email from {sender_clean} to {recipient_clean} via sandbox relay..."):
+                    result = send_manual_test_run(
+                        sender_email=sender_clean,
+                        recipient_email=recipient_clean,
                         japanese_body=st.session_state.japanese_body,
                         english_body=st.session_state.english_draft,
+                        subject=final_dispatch_subject,
+                        japanese_subject=st.session_state.japanese_subject,
                     )
+
+                if result.get("success"):
+                    st.balloons()
+                    with st.container(border=True):
+                        st.success("🎉 **Manual Test Email Delivered Successfully!**")
+                        st.markdown(f"- 📤 **Sender Email Address (From):** `{result.get('sender', sender_clean)}` *(Provider-Free / Non-Gmail)*")
+                        st.markdown(f"- 📥 **Recipient Email Address (To):** `{result.get('recipient', recipient_clean)}`")
+                        st.markdown(f"- 📨 **Dispatched Subject Line:** `{result.get('subject', final_dispatch_subject)}`")
+                        st.markdown(f"- 🔒 **Delivery Relay:** `{result.get('smtp_host', 'smtp.ethereal.email')}:{result.get('smtp_port', 587)}` *(STARTTLS)*")
+                        st.markdown("- ✅ **Dual-Card Bilingual MIME formatting confirmed delivered.**")
+                        
+                        preview_url = result.get("preview_url")
+                        if preview_url:
+                            st.markdown("---")
+                            st.link_button("🌐 View Delivered Email in Web Viewer", url=preview_url, type="primary")
+                            st.caption(f"Direct link: [{preview_url}]({preview_url})")
+                else:
+                    st.error(f"❌ {result.get('message') or result.get('error')}")
+
+    elif "⚡ Automatic Dry-run with sending" in dispatch_mode:
+        st.info("⚡ **100% Automated Communication Self-Test:** Zero configuration or credentials needed! Automatically provisions 2 temporary disposable inboxes on the fly, connects to SMTP via STARTTLS, transmits the bilingual email, and lets you view the delivered email in the web viewer.")
+
+        col_btn_auto, _ = st.columns([1, 2])
+        with col_btn_auto:
+            btn_auto = st.button("⚡ Run Automated Communication Test", type="primary", use_container_width=True)
+
+        if btn_auto:
+            progress_slot = st.empty()
+            
+            with progress_slot.container():
+                with st.spinner("⏳ [1/3] Provisioning 2 temporary inboxes..."):
+                    time.sleep(0.6)
+            
+            with progress_slot.container():
+                with st.spinner("⏳ [2/3] Connecting to SMTP on port 587 via STARTTLS..."):
+                    result = send_automatic_test_run(
+                        japanese_body=st.session_state.japanese_body,
+                        english_body=st.session_state.english_draft,
+                        subject=final_dispatch_subject,
+                        japanese_subject=st.session_state.japanese_subject,
+                    )
+
+            progress_slot.empty()
+
+            if result.get("success"):
+                st.success("🎉 **[3/3] Dispatched!** Communication test completed successfully.")
+                st.balloons()
+                with st.container(border=True):
+                    st.markdown("### ⚡ Automated Communication Test Results")
+                    st.markdown(f"- 📤 **Generated Temporary Sender:** `{result.get('sender')}`")
+                    st.markdown(f"- 📥 **Generated Temporary Recipient:** `{result.get('recipient')}`")
+                    st.markdown(f"- 📨 **Dispatched Subject:** `{result.get('subject', final_dispatch_subject)}`")
+                    st.markdown(f"- 🔒 **Transport:** Ethereal SMTP Relay (Port 587, STARTTLS)")
                     
-                    if result.get("success"):
-                        st.balloons()
-                        st.success(f"✅ {result.get('message')}")
-                    else:
-                        st.error(f"❌ {result.get('message')}")
+                    preview_url = result.get("preview_url")
+                    if preview_url:
+                        st.markdown("---")
+                        st.link_button("🔗 View Received Email in Web Inbox", url=preview_url, type="primary")
+                        st.caption(f"Direct link: [{preview_url}]({preview_url})")
+            else:
+                st.error(f"❌ {result.get('message') or result.get('error')}")

@@ -5,6 +5,8 @@ Coordinates the bilingual email workflow:
 1. write_email: Generates formal English email via NVIDIA AI Foundation Endpoints.
 2. translate: Translates English text to Japanese via Google Translate.
 3. email_sender: Dispatches styled dual-card HTML and plain-text email via SMTP.
+4. test_dispatcher: Executes provider-independent dry-runs (Automatic & Manual)
+   via disposable Ethereal relays with online web preview links.
 
 Compatible with Python 3.14.2.
 """
@@ -36,6 +38,7 @@ if sys.platform == "win32":
 from email_trans.write_email import generate_email
 from email_trans.translate import translate_english_to_japanese
 from email_trans.email_sender import send_email, is_valid_email
+from email_trans.test_dispatcher import send_automatic_test_run, send_manual_test_run
 
 
 def extract_subject_from_draft(text: str, default_subject: str = "Bilingual Communication / 業務連絡") -> tuple[str, str]:
@@ -90,10 +93,22 @@ def orchestrate(
     subject: Optional[str] = None,
     dry_run: bool = False,
     auto_confirm: bool = False,
+    auto_test: bool = False,
+    manual_test: bool = False,
+    from_email: Optional[str] = None,
+    **kwargs: Any,
 ) -> dict[str, Any]:
     """
     Runs the full end-to-end email translation pipeline:
-    NVIDIA AI -> Google Translate -> SMTP delivery.
+    NVIDIA AI -> Google Translate -> SMTP delivery / Dry-run testing.
+
+    Modes:
+    - Standard SMTP delivery: Sends email to recipient via configured SMTP credentials.
+    - Dry-Run (--dry-run): Local preview only without network dispatch.
+    - Automatic Dry-Run (--auto-test): Fully automated test run provisioning 2 disposable
+      inboxes and sending via Ethereal SMTP with online web preview link.
+    - Manual Dry-Run (--manual-test): Provider-independent test run supporting any custom
+      sender and recipient, routed via test SMTP relay with online web preview link.
     """
     if not topic or not topic.strip():
         return {"success": False, "message": "Email topic cannot be empty."}
@@ -143,15 +158,121 @@ def orchestrate(
         return {"success": False, "message": err_msg}
 
     # Display console preview with both English and Japanese subjects
+    preview_recipient = to
+    if not preview_recipient and auto_test:
+        preview_recipient = "[Auto-provisioned test inbox]"
     console_preview(
         english_subject=english_subject,
         japanese_subject=bracketed_ja_subject,
-        recipient=to,
+        recipient=preview_recipient,
         english_body=cleaned_english_body,
         japanese_body=japanese_translation,
     )
 
-    # Step 3: Dispatch or Dry-run
+    # Step 3: Dispatch or Dry-run / Test Run
+
+    # Mode 1: Automatic Dry-Run (Provider-independent, zero credentials)
+    if auto_test:
+        print("\n[3/3] [AUTO-TEST] Running Automatic Dry-Run (Provider-Independent)...")
+        print("      Auto-provisioning 2 temporary inboxes via Ethereal...")
+        test_result = send_automatic_test_run(
+            japanese_body=japanese_translation,
+            english_body=cleaned_english_body,
+            subject=final_subject,
+            japanese_subject=bracketed_ja_subject,
+        )
+
+        if test_result.get("success"):
+            print(f"\n{'='*70}")
+            print("✅ AUTOMATIC DRY-RUN COMPLETED")
+            print(f"{'='*70}")
+            print(f"[*] Delivery:     Delivered via Ethereal SMTP STARTTLS ({test_result.get('smtp_host')}:{test_result.get('smtp_port')})")
+            print(f"[*] Temp Sender:  {test_result.get('sender')}")
+            print(f"[*] Temp Recip:   {test_result.get('recipient')}")
+            print(f"[*] Subject:      {test_result.get('subject')}")
+            print(f"[*] Web Preview:  {test_result.get('preview_url')}")
+            print(f"{'='*70}\n")
+        else:
+            print(f"\n[ERROR] Automatic dry-run failed: {test_result.get('message')}")
+
+        return test_result
+
+    # Mode 2: Manual Dry-Run (Provider-independent, custom sender & recipient)
+    if manual_test:
+        print("\n[3/3] [MANUAL-TEST] Preparing Manual Dry-Run (Provider-Independent)...")
+        sender = (
+            from_email
+            or kwargs.get("sender")
+            or kwargs.get("sender_email")
+            or os.getenv("SENDER_EMAIL")
+            or os.getenv("GMAIL_ADDRESS")
+        )
+
+        if not sender or not str(sender).strip():
+            if sys.stdin.isatty():
+                try:
+                    sender = input("Enter sender email (any provider, e.g. me@outlook.com): ").strip()
+                except (KeyboardInterrupt, EOFError):
+                    print("\nOperation aborted by user.")
+                    return {"success": False, "message": "Operation aborted."}
+
+        if not sender or not is_valid_email(str(sender).strip()):
+            err_msg = f"Invalid or missing sender email address: '{sender}'. Specify with --from / -f."
+            print(f"[ERROR] {err_msg}")
+            return {"success": False, "message": err_msg}
+
+        if not to or not str(to).strip():
+            if sys.stdin.isatty():
+                try:
+                    to = input("Enter recipient email address: ").strip()
+                except (KeyboardInterrupt, EOFError):
+                    print("\nOperation aborted by user.")
+                    return {"success": False, "message": "Operation aborted."}
+
+        if not to or not is_valid_email(str(to).strip()):
+            err_msg = f"Invalid or missing recipient email address: '{to}'. Specify with --to / -r."
+            print(f"[ERROR] {err_msg}")
+            return {"success": False, "message": err_msg}
+
+        norm_sender = str(sender).strip()
+        norm_to = str(to).strip()
+
+        if not auto_confirm and sys.stdin.isatty():
+            try:
+                choice = input(f"Dispatch manual test run from '{norm_sender}' to '{norm_to}'? [y/N]: ").strip().lower()
+                if choice not in ("y", "yes"):
+                    print("[INFO] Manual test dispatch canceled by user.")
+                    return {"success": False, "message": "Delivery canceled by user."}
+            except (KeyboardInterrupt, EOFError):
+                print("\nOperation aborted by user.")
+                return {"success": False, "message": "Operation aborted."}
+
+        print("      Routing transmission via provisioned test SMTP relay with custom headers...")
+        test_result = send_manual_test_run(
+            sender_email=norm_sender,
+            recipient_email=norm_to,
+            japanese_body=japanese_translation,
+            english_body=cleaned_english_body,
+            subject=final_subject,
+            japanese_subject=bracketed_ja_subject,
+        )
+
+        if test_result.get("success"):
+            print(f"\n{'='*70}")
+            print("✅ MANUAL DRY-RUN COMPLETED")
+            print(f"{'='*70}")
+            print(f"[*] Transmission: Delivered via test SMTP relay ({test_result.get('smtp_host')}:{test_result.get('smtp_port')})")
+            print(f"[*] Sender:       {test_result.get('sender')}")
+            print(f"[*] Recipient:    {test_result.get('recipient')}")
+            print(f"[*] Subject:      {test_result.get('subject')}")
+            print(f"[*] Web Preview:  {test_result.get('preview_url')}")
+            print(f"{'='*70}\n")
+        else:
+            print(f"\n[ERROR] Manual test run failed: {test_result.get('message')}")
+
+        return test_result
+
+    # Mode 3: Local Dry-run (No email sent)
     if dry_run:
         print("\n[3/3] [DRY-RUN] Execution completed. Delivery skipped (--dry-run flag enabled).")
         return {
@@ -165,6 +286,7 @@ def orchestrate(
             "message": "Dry-run succeeded.",
         }
 
+    # Mode 4: Standard SMTP dispatch
     print("\n[3/3] Preparing SMTP dispatch...")
     if not to or not to.strip():
         # In interactive terminal, allow user to input recipient
@@ -214,13 +336,19 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Generate & translate in dry-run mode (no email sent):
+  # 1. Automatic Zero-Configuration Dry-Run (No email addresses or credentials needed!):
+  python -m email_trans.main --topic "Project delivery update" --auto-test
+
+  # 2. Manual Dry-Run with custom sender and recipient (Provider-Independent!):
+  python -m email_trans.main --topic "Meeting reschedule" --manual-test --from user@outlook.com --to client@partner.jp
+
+  # 3. Local preview only (dry-run without network dispatch):
   python -m email_trans.main --topic "Informing client for project completion" --dry-run
 
-  # Full delivery with specified recipient and subject:
+  # 4. Production delivery via configured SMTP (Gmail / Custom):
   python -m email_trans.main --topic "Meeting reschedule request" --to client@example.com --subject "Schedule Update"
 
-  # Non-interactive automated dispatch (skip confirmation prompt):
+  # 5. Non-interactive automated production dispatch (skip confirmation prompt):
   python -m email_trans.main --topic "Project delivery" --to client@example.com --yes
         """,
     )
@@ -238,16 +366,39 @@ Examples:
         help="Recipient email address.",
     )
     parser.add_argument(
+        "--from",
+        "-f",
+        "--from-email",
+        "--sender",
+        dest="from_email",
+        type=str,
+        help="Sender email address (any provider, not restricted to Gmail; e.g. me@outlook.com, dev@company.com). Used with --manual-test.",
+    )
+    parser.add_argument(
         "--subject",
         "-s",
         type=str,
         help="Email subject line (extracted from draft if not provided).",
     )
     parser.add_argument(
+        "--auto-test",
+        "-a",
+        action="store_true",
+        help="Run an Automatic Dry-Run with live SMTP transmission. Requires NO email addresses and NO credentials. "
+             "Auto-provisions 2 temporary inboxes, delivers via SMTP STARTTLS, and prints the web preview link.",
+    )
+    parser.add_argument(
+        "--manual-test",
+        "-m",
+        action="store_true",
+        help="Run a Manual Dry-Run with live SMTP transmission. Provider-independent: accepts any sender (--from / -f) "
+             "and recipient (--to / -r) without requiring Gmail credentials. Prints transmission logs and web preview link.",
+    )
+    parser.add_argument(
         "--dry-run",
         "-d",
         action="store_true",
-        help="Preview generated English email and Japanese translation without sending via SMTP.",
+        help="Preview generated English email and Japanese translation locally without sending via SMTP.",
     )
     parser.add_argument(
         "--yes",
@@ -262,6 +413,15 @@ def main() -> int:
     """CLI Entrypoint."""
     parser = build_parser()
     args = parser.parse_args()
+
+    # Validate mutually exclusive dry-run flags if multiple specified
+    active_test_modes = sum(bool(m) for m in [args.auto_test, args.manual_test, args.dry_run])
+    if active_test_modes > 1:
+        print(
+            "[ERROR] Conflicting options: Please specify only one of --auto-test, --manual-test, or --dry-run.",
+            file=sys.stderr,
+        )
+        return 1
 
     topic = args.topic
     if not topic:
@@ -286,6 +446,9 @@ def main() -> int:
         subject=args.subject,
         dry_run=args.dry_run,
         auto_confirm=args.yes,
+        auto_test=args.auto_test,
+        manual_test=args.manual_test,
+        from_email=args.from_email,
     )
 
     return 0 if result.get("success") else 1

@@ -41,6 +41,8 @@ This project has been completely modernized from a heavy local-inference archite
    - [Test 2: Email Generation Module](#test-2-email-generation-module)
    - [Test 3: Email Sender Module](#test-3-email-sender-module)
    - [Test 4: Full Pipeline End-to-End Test](#test-4-full-pipeline-end-to-end-test)
+   - [Test 5: ⚡ Automatic Dry-Run with Sending (`--auto-test`)](#test-5--automatic-dry-run-with-sending---auto-test)
+   - [Test 6: 🧪 Manual Dry-Run with Sending (`--manual-test`)](#test-6--manual-dry-run-with-sending---manual-test)
 7. [Troubleshooting Guide](#7-troubleshooting-guide)
 8. [Project Structure Reference](#8-project-structure-reference)
 
@@ -275,6 +277,37 @@ python -c "from email_trans.write_email import generate_email; from email_trans.
 
 ---
 
+### Test 5: ⚡ Automatic Dry-Run with Sending (`--auto-test`)
+
+Tests the complete pipeline via an autonomous self-test without requiring any pre-configured credentials or personal Gmail accounts.
+
+```bash
+python email_trans/main.py --topic "Project update" --auto-test
+```
+
+**Key Architectural Capabilities:**
+- **100% Automated End-to-End Self-Test:** Runs completely hands-free from topic input to inbox verification.
+- **On-the-Fly Dual Inbox Provisioning:** Automatically provisions 2 temporary inboxes in real time (one acting as the sender, one as the recipient).
+- **Comprehensive Protocol Verification:** Verifies real SMTP TLS handshake, dual-card MIME rendering (Rose Japanese card + Amber English card), and inbox delivery.
+- **Zero Credentials Required:** Requires no `.env` setup, no API keys, and no Gmail App Passwords.
+
+---
+
+### Test 6: 🧪 Manual Dry-Run with Sending (`--manual-test`)
+
+Tests sending from any custom or corporate email address via a disposable test SMTP relay with a live web preview.
+
+```bash
+python email_trans/main.py --topic "Project update" --manual-test --from dev@company.com --to client@domain.jp
+```
+
+**Key Architectural Capabilities:**
+- **Completely Free from Any Specific Mail Provider:** Sender does not need to be a Gmail ID. Use any corporate domain (`dev@company.com`), custom tech domain, Outlook, or Yahoo address.
+- **Disposable Test SMTP Relay:** Dispatches across real TLS sockets via a disposable test SMTP relay without needing Gmail App Passwords.
+- **Live Web Preview of Delivered Email:** Generates a live web preview URL where evaluators and developers can visually inspect the delivered bilingual email rendered with full HTML styling.
+
+---
+
 ## 7. Troubleshooting Guide
 
 ### 1. `401 Unauthorized` or `AuthenticationError` (NVIDIA API)
@@ -293,6 +326,10 @@ python -c "from email_trans.write_email import generate_email; from email_trans.
   - Re-generate an **App Password** from [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
   - Remove all spaces from the 16-character string in `GMAIL_APP_PASSWORD=abcdefghijklmnop`.
   - Double check that `GMAIL_ADDRESS` matches the account where the App Password was created.
+* **Alternative (Zero-Credential Testing):**
+  - If you do not have a Gmail account or want to test email transmission without exposing personal credentials, use the provider-independent testing modes:
+    - ⚡ `python email_trans/main.py --topic "Project update" --auto-test` (automated self-test with 2 temporary inboxes on the fly)
+    - 🧪 `python email_trans/main.py --topic "Project update" --manual-test --from dev@company.com --to client@domain.jp` (test dispatch from any corporate/custom domain via disposable test SMTP relay with live web preview URL)
 
 ---
 

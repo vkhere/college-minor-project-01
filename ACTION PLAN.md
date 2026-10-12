@@ -32,7 +32,8 @@ User Topic ──> NVIDIA AI Endpoints (DiffusionGemma / Llama) ──> Google T
 2. **Elimination of Local Weights:** Completely remove multi-gigabyte model downloads and VRAM constraints.
 3. **NVIDIA Token & Quota Conservation:** Restrict NVIDIA AI Foundation Endpoints strictly to creative email composition while offloading all translation tasks to Google Translate.
 4. **Dual-Tier Resiliency:** Ensure every external network call possesses a zero-dependency Python standard library (`urllib.request` + `json`) fallback.
-5. **Academic Excellence:** Deliver rigorous software engineering documentation, a verifiable Work Breakdown Structure (WBS), Gantt scheduling, proactive risk mitigations, and an automated validation checklist.
+5. **Provider-Independent Testing Architecture:** Support friction-free testing with **⚡ Automatic Dry-run with sending** (zero credentials, 2 temporary inboxes on the fly, real TLS handshake & inbox delivery verification) and **🧪 Manual Dry-run with sending** (any corporate or custom domain via disposable test SMTP relay with live web preview URL).
+6. **Academic Excellence:** Deliver rigorous software engineering documentation, a verifiable Work Breakdown Structure (WBS), Gantt scheduling, proactive risk mitigations, and an automated validation checklist.
 
 ---
 
@@ -339,7 +340,10 @@ WBS Level 1: English-to-Japanese Email Translator (Cloud AI Edition)
 │   ├── 5.1 Implement email_sender.py (Dual-card HTML + STARTTLS SMTP)
 │   ├── 5.2 Build main.py CLI Orchestrator with argparse
 │   ├── 5.3 Add Dry-Run Interactive Terminal Preview
-│   └── 5.4 Build Automated Validation Suite for Python 3.14.2
+│   ├── 5.4 Build Automated Validation Suite for Python 3.14.2
+│   └── 5.5 Provider-Independent Testing Architecture
+│       ├── 5.5.1 ⚡ Automatic Dry-run with sending (--auto-test: 2 temporary inboxes on the fly)
+│       └── 5.5.2 🧪 Manual Dry-run with sending (--manual-test: custom domain, disposable test SMTP relay, live web preview)
 └── 6.0 Academic Documentation & Final Submission
     ├── 6.1 Update Project Reports (PRD, SETUP, RULES, SKILLS, LEARNINGS)
     ├── 6.2 Compile Academic Project Report & Methodology Documentation
@@ -398,7 +402,7 @@ gantt
 | **RSK-01** | Compatibility | **Python 3.14.2 Binary Wheel Failure:** Third-party libraries fail to install due to missing pre-built wheels. | High | Med | **Amber** | Eliminate compiled C/C++ packages (`torch`, `transformers`); require pure-Python packages. | System contains native stdlib fallbacks (`urllib.request`) that run with zero third-party dependencies. |
 | **RSK-02** | Rate Limits | **NVIDIA API Quota Depletion:** Exhausting developer tier quota during testing or live presentation. | High | Med | **Amber** | Route all translation to Google Translate, cutting token usage by ~70%. Set token limit to 512. | Provide offline mock email generation script (`--mock-llm`) for presentation resilience. |
 | **RSK-03** | Network / API | **Google Translate Endpoint Throttling:** Rapid consecutive requests triggering HTTP 429 or captcha block. | Med | Low | **Yellow** | Implement 1-second debounce, text caching, and user-agent rotation in fallback HTTP requests. | Switch seamlessly between `deep-translator` library and raw `translate.googleapis.com` endpoint. |
-| **RSK-04** | Security | **Gmail SMTP Authentication Block:** Google rejects SMTP connection due to password policy. | High | Med | **Amber** | Strictly mandate 16-character Google App Passwords generated under 2-Step Verification. | Validate credentials during startup; prompt user with direct Google Security URL if auth fails. |
+| **RSK-04** | Security | **Gmail SMTP Authentication Block:** Google rejects SMTP connection due to password policy. | High | Med | **Amber** | Strictly mandate 16-character Google App Passwords generated under 2-Step Verification. | Validate credentials during startup; prompt user with Google Security URL or fallback to provider-independent testing (`--auto-test` / `--manual-test`). |
 | **RSK-05** | Encoding | **Japanese Character Mojibake on Windows:** Terminal or email client renders Japanese characters as `???`. | Med | Med | **Yellow** | Enforce explicit `utf-8` charset across all `MIMEText` objects and enable Python UTF-8 mode. | Explicitly configure standard output encoding to UTF-8 in CLI runner (`sys.stdout.reconfigure`). |
 | **RSK-06** | Formatting | **Loss of Email Structure in Translation:** Line breaks stripped by translation engine. | Low | Med | **Green** | Translate email text paragraph-by-paragraph or preserve newline delimiters before translation. | Render both Japanese and English side-by-side in HTML dual-card format for clarity. |
 
@@ -455,6 +459,14 @@ This checklist must be executed on a target machine running **Python 3.14.2** to
   - **Command:** `python -m email_trans.main --topic "Project evaluation update" --to "evaluator@university.edu"`
   - **Expected Output:** Email delivered to recipient inbox; renders cleanly on mobile and desktop email clients.
   - **Pass Criteria:** Exit code 0; SMTP transaction completed over STARTTLS.
+- [ ] **TC-11: ⚡ Automatic Dry-Run with Sending**
+  - **Command:** `python email_trans/main.py --topic "Project update" --auto-test`
+  - **Expected Output:** 100% automated self-test provisioning 2 temporary inboxes on the fly, verifying real SMTP TLS handshake, dual-card MIME rendering, and inbox delivery.
+  - **Pass Criteria:** Zero credentials required; exit code 0; successful inbox delivery confirmation.
+- [ ] **TC-12: 🧪 Manual Dry-Run with Sending**
+  - **Command:** `python email_trans/main.py --topic "Project update" --manual-test --from dev@company.com --to client@domain.jp`
+  - **Expected Output:** Dispatches from custom/corporate domain via disposable test SMTP relay; outputs live web preview URL of delivered bilingual email.
+  - **Pass Criteria:** No Gmail App Password required; returns live web preview URL displaying rendered dual-card HTML.
 
 ---
 

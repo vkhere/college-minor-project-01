@@ -10,9 +10,13 @@ Bilingual English-to-Japanese email automation pipeline:
 from email_trans.write_email import generate_email
 from email_trans.translate import translate_english_to_japanese
 from email_trans.email_sender import send_email
+from email_trans.test_dispatcher import send_automatic_test_run, send_manual_test_run
 
 __all__ = [
     "generate_email",
     "translate_english_to_japanese",
     "send_email",
+    "send_automatic_test_run",
+    "send_manual_test_run",
 ]
+

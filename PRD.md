@@ -17,6 +17,7 @@ The **English-to-Japanese Email Translator** is an automated, end-to-end communi
 1. **Generates** professionally styled formal business emails from simple bullet-point topics using cloud-hosted generative Large Language Models via NVIDIA AI Foundation Endpoints (supporting Google DiffusionGemma 26B and Meta Llama 3 / Llama 3.1).
 2. **Translates** the generated English email into Japanese using Google Translate (via `deep-translator` with direct HTTP fallback), completely eliminating local PyTorch/Transformers dependencies and multi-gigabyte local model checkpoints.
 3. **Dispatches** the email directly via a secure Gmail SMTP client, delivering a polished dual-language HTML email that highlights the Japanese translation as primary communication while embedding the original English text for verification.
+4. **Verifies & Tests:** Provides a provider-independent testing architecture with **⚡ Automatic Dry-run with sending** (zero credentials, 2 temporary inboxes on the fly, real TLS delivery verification) and **🧪 Manual Dry-run with sending** (custom/corporate domains via disposable test SMTP relay with live web previews).
 
 ---
 
@@ -36,6 +37,7 @@ An integrated, lightweight, cloud-native AI pipeline designed for zero local sto
 - **Generation Layer:** NVIDIA AI Foundation Endpoints hosting frontier LLMs (`google/diffusiongemma-26b-a4b-it` or `meta/llama-3.1-70b-instruct`) tasked with formal English email composition, accessible via LangChain or native HTTP.
 - **Translation Layer:** High-speed cloud translation via Google Translate (orchestrated via `deep-translator` with an autonomous standard-library HTTP fallback), completely removing `torch`, `transformers`, and local model weights.
 - **Delivery Layer:** An automated SMTP Gmail dispatcher presenting both translated Japanese and original English in an elegant, responsive dual-language HTML email template.
+- **Testing Architecture:** Provider-independent test relays and on-the-fly temporary inboxes enabling rigorous end-to-end TLS delivery verification without requiring Gmail credentials.
 
 ---
 
@@ -50,6 +52,7 @@ To deliver an ultra-lightweight, zero-storage-overhead, and automated developer 
 - **Modern Python Compatibility:** Ensure 100% out-of-the-box support for modern Python runtimes, specifically **Python 3.14.2**, by removing C-extension and binary wheel bottlenecks (`torch`, `sentencepiece`).
 - **Dual-Language Clarity:** Deliver multipart plain-text and HTML emails with dual-language rendering (primary Japanese block + reference English block) via Gmail SMTP.
 - **Modular & Resilient Architecture:** Decouple Generation, Translation, and Delivery so that each layer can run standalone, within LangChain LCEL pipelines, or via pure standard-library fallbacks.
+- **Provider-Independent Testing:** Enable zero-credential, friction-free testing through on-the-fly temporary inboxes (`--auto-test`) and disposable test SMTP relays (`--manual-test`) with live web previews.
 
 ---
 
@@ -69,6 +72,7 @@ To deliver an ultra-lightweight, zero-storage-overhead, and automated developer 
 2. **US-02 (Zero-Weight Machine Translation):** As a developer running modern environments (like Python 3.14.2) or resource-constrained devices, I want fast and accurate English-to-Japanese translation via Google Translate (`deep-translator` / HTTP) without downloading 3+ GB of PyTorch weights or compiling complex C/C++ dependencies.
 3. **US-03 (Dual-Language Presentation):** As a Japanese recipient, I want to read the message in Japanese first, but have access to the original English text beneath it in a distinct reference block for instant verification and transparency.
 4. **US-04 (Automated Dispatch):** As a busy professional, I want the system to send the generated email directly through my secure Gmail SMTP credentials without manual copy-pasting or client configuration.
+5. **US-05 (Provider-Independent Testing & Evaluation):** As a developer, student, or academic evaluator without a Gmail App Password, I want to perform automated (`--auto-test`) and manual (`--manual-test`) end-to-end test dispatches using temporary inboxes and disposable test relays to verify real SMTP TLS handshakes, dual-card HTML formatting, and live web previews with zero credentials required.
 
 ---
 
@@ -97,6 +101,18 @@ To deliver an ultra-lightweight, zero-storage-overhead, and automated developer 
   - **Reference English block:** Distinct styled card (`#fff3cd` background, `#856404` accent border) clearly labeled as source text.
   - **Provenance footer:** Declaring automated translation assistance.
 - **FR-3.5:** Function shall return a standardized dictionary `{"success": bool, "message": str}` with structured exception handling for `SMTPAuthenticationError` and network timeouts.
+
+### 6.4 Provider-Independent Testing Architecture (`main.py` / `email_sender.py`)
+- **FR-4.1 (🧪 Manual Dry-Run with Sending):**
+  - System shall support `--manual-test` allowing senders from any domain (corporate, custom, Outlook, Yahoo) without requiring a Gmail account or App Passwords.
+  - System shall dispatch emails via a disposable test SMTP relay over TLS.
+  - System shall generate a live, clickable web preview URL displaying the delivered bilingual email with rendered dual-card HTML formatting.
+  - CLI usage: `python email_trans/main.py --topic "Project update" --manual-test --from dev@company.com --to client@domain.jp`
+- **FR-4.2 (⚡ Automatic Dry-Run with Sending):**
+  - System shall support `--auto-test` executing a 100% automated end-to-end self-test without requiring interactive inputs or credentials.
+  - System shall dynamically provision 2 temporary inboxes on the fly (sender and recipient).
+  - System shall conduct a real network SMTP TLS handshake, construct dual-card MIME payloads, and verify successful inbox delivery.
+  - CLI usage: `python email_trans/main.py --topic "Project update" --auto-test`
 
 ---
 

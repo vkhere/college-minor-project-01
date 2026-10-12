@@ -33,7 +33,8 @@ Unlike legacy machine learning workflows that demand multi-gigabyte model weight
 | 🪶 **Ultra-Lightweight (<20 MB)** | The entire dependency tree installs in seconds and takes less than 20 MB of disk space (over **99.5% reduction** compared to >4.9 GB previously). |
 | ⚡ **Lightning-Fast Execution** | Sub-second translation latency (~200–400 ms) via Google Translate paired with rapid cloud LLM streaming. |
 | 🔄 **Reactive Auto-Translation** | Instant synchronization in the Streamlit UI: editing the English Subject Line (<kbd>Enter</kbd>) or English Email Draft (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>) automatically triggers Google Translate synchronization for Japanese fields while preserving manual Japanese adjustments. |
-| 🧪 **Enhanced Dry-Run Mode** | Validates both Sender Email Address and Recipient Email Address side-by-side with full RFC regex checks, previewing the complete bilingual email without sending real emails. |
+| 🧪 **Provider-Independent Testing Architecture** | Comprehensive testing framework featuring **⚡ Automatic Dry-run with sending** (zero credentials, 2 temporary inboxes on the fly, real SMTP TLS handshake & delivery check) and **🧪 Manual Dry-run with sending** (any domain, disposable test SMTP relay, live web preview URL). |
+| 🛡️ **Enhanced Dry-Run Mode** | Validates both Sender Email Address and Recipient Email Address side-by-side with full RFC regex checks, previewing the complete bilingual email without sending real emails. |
 | 💰 **API Token & Quota Conservation** | LLM tokens are reserved solely for creative drafting; 100% of the translation workload is offloaded to Google Translate to preserve API quota. |
 | 🐍 **100% Python 3.14.2 Compatible** | Built with pure-Python packages and standard library fallbacks (`urllib.request`), completely avoiding missing C++ binary wheel issues on newer Python releases. |
 | 🛡️ **Graceful HTTP Fallbacks** | Both drafting and translation modules feature native Python standard library fallbacks that function even if third-party packages are absent. |
@@ -262,26 +263,68 @@ The Web UI provides a reactive, real-time environment with live visual feedback:
 
 ### 2. Run the Complete Pipeline via CLI Orchestrator
 
-Run the end-to-end translation pipeline with interactive preview or dry-run:
+Run the end-to-end translation pipeline with interactive preview, provider-independent test runs, or full delivery:
 
 ```bash
-# Dry-run preview (generates & translates without sending email)
+# ⚡ Automatic Dry-run with sending (zero credentials, 2 temporary inboxes on the fly, real SMTP TLS delivery verification):
+python email_trans/main.py --topic "Project update" --auto-test
+
+# 🧪 Manual Dry-run with sending (provider-independent from any corporate/custom domain via disposable test SMTP relay with live web preview):
+python email_trans/main.py --topic "Project update" --manual-test --from dev@company.com --to client@domain.jp
+
+# Dry-run preview (generates & translates without network SMTP transmission):
 python email_trans/main.py --topic "inform client that project milestone 1 is complete" --dry-run
-```
 
-```bash
-# Complete execution with delivery:
+# Complete production execution with Gmail SMTP delivery:
 python email_trans/main.py --topic "requesting meeting regarding Q3 financial review" --to "client@company.jp"
-```
 
-```bash
-# Interactive mode (prompts for topic, recipient, and send confirmation)
+# Interactive mode (prompts for topic, recipient, and send confirmation):
 python email_trans/main.py
 ```
 
 ---
 
-### 3. Run Individual Modules Separately
+### 3. 🧪 Provider-Independent Testing Architecture
+
+To enable friction-free development, CI/CD verification, and academic demonstrations without credential barriers, the system features a **Provider-Independent Testing Architecture** that tests real email dispatch without requiring personal Gmail accounts or Google App Passwords:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        PROVIDER-INDEPENDENT TESTING ARCHITECTURE                       │
+├──────────────────────────────────────────┬─────────────────────────────────────────────┤
+│ ⚡ Automatic Dry-Run with Sending         │ 🧪 Manual Dry-Run with Sending              │
+│ • CLI: `--auto-test`                     │ • CLI: `--manual-test`                      │
+│ • 100% automated end-to-end self-test    │ • Any sender domain (corporate, custom,     │
+│ • Provisions 2 temporary inboxes on the  │   Outlook, Yahoo, etc. — no Gmail required) │
+│   fly (sender & recipient)               │ • Dispatches via disposable test SMTP relay │
+│ • Verifies real SMTP TLS handshake,      │   without needing Gmail App Passwords       │
+│   dual-card MIME rendering & delivery    │ • Generates live web preview URL of the     │
+│ • ZERO credentials required              │   delivered bilingual email                 │
+└──────────────────────────────────────────┴─────────────────────────────────────────────┘
+```
+
+#### 🧪 Manual Dry-run with sending
+- **Completely Free from Any Specific Mail Provider:** The sender identity is not restricted to Gmail. You can specify any address—such as corporate (`dev@company.com`), custom domains (`engineer@startup.io`), Outlook, or Yahoo.
+- **Disposable Test SMTP Relay:** Dispatches via a disposable test SMTP relay without needing Gmail App Passwords or 2-Step Verification setups.
+- **Live Web Preview of Delivered Email:** Generates an immediate, clickable web preview URL displaying the delivered bilingual email with dual-card HTML formatting (Rose Japanese primary card + Amber English reference card).
+- **CLI Example:**
+  ```bash
+  python email_trans/main.py --topic "Project update" --manual-test --from dev@company.com --to client@domain.jp
+  ```
+
+#### ⚡ Automatic Dry-run with sending
+- **100% Automated End-to-End Self-Test:** Runs completely autonomously with a single command—ideal for quick verification, CI/CD pipelines, and project demonstrations.
+- **Provisions 2 Temporary Inboxes on the Fly:** Dynamically provisions two temporary inboxes in real time (one acting as the sender, one as the recipient).
+- **Verifies Real SMTP TLS Handshake & Dual-Card MIME Delivery:** Establishes a real network connection over TLS, constructs the multipart MIME payload, verifies dual-card HTML template rendering, and validates inbox delivery confirmation.
+- **Zero Credentials Required:** Completely functional without `.env` configuration, requiring zero API keys or SMTP passwords.
+- **CLI Example:**
+  ```bash
+  python email_trans/main.py --topic "Project update" --auto-test
+  ```
+
+---
+
+### 4. Run Individual Modules Separately
 
 Each stage is completely modular and can be tested independently:
 
